@@ -1,7 +1,7 @@
 # GCP VM Deployment Guide
 ### Full-stack apps with Docker, Caddy, GitHub Actions & GCP Artifact Registry
 
-> **Who this is for:** Rookie developers and LLMs that need to deploy a web application to a GCP VM using the same battle-tested patterns used by the Tasty ERP system. Every step is explained. Every tool is introduced. Every command is real — copy-paste ready.
+> **Who this is for:** Rookie developers and LLMs that need to deploy a web application to a GCP VM using the same battle-tested patterns used by the Tasty ERP system. Every step is explained. Every tool is introduced. Every command is real — copy-paste ready..
 
 ---
 
