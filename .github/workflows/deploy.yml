@@ -27,7 +27,23 @@ env:
   DEPLOY_DIR: /home/${{ secrets.VM_SSH_USER }}/apps/order-app
 
 jobs:
+  vm-handshake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: VM handshake (SSH preflight)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_SSH_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            set -e
+            echo "VM handshake OK: $(hostname)"
+            command -v docker >/dev/null 2>&1
+            docker --version
+
   test:
+    needs: vm-handshake
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +60,7 @@ jobs:
         run: mvn verify -B
 
   build-backend:
-    needs: test
+    needs: [vm-handshake, test]
     if: ${{ !inputs.rollback }}
     runs-on: ubuntu-latest
     steps:
@@ -74,7 +90,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=backend
 
   build-frontend:
-    needs: test
+    needs: [vm-handshake, test]
     if: ${{ !inputs.rollback }}
     runs-on: ubuntu-latest
     steps:
@@ -104,7 +120,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend
 
   deploy:
-    needs: [test, build-backend, build-frontend]
+    needs: [vm-handshake, test, build-backend, build-frontend]
     if: ${{ always() && needs.test.result == 'success' && (needs.build-backend.result == 'success' && needs.build-frontend.result == 'success' || inputs.rollback) }}
     runs-on: ubuntu-latest
     environment: production

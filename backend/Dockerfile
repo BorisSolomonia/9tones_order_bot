@@ -1,4 +1,5 @@
 FROM eclipse-temurin:21-jdk-alpine AS build
+RUN apk add --no-cache curl tar gzip
 WORKDIR /app
 COPY pom.xml .
 COPY .mvn .mvn

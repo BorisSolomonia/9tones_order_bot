@@ -31,7 +31,7 @@
    - [C5. Caddyfile.production](#c5-caddyfileproduction)
    - [C6. .dockerignore](#c6-dockerignore)
    - [C7. .env.example](#c7-envexample)
-6. [Part D — GitHub Actions CI/CD Pipeline](#part-d--github-actions-cicd-pipeline)
+   - [D0. VM Handshake Preflight (Required)](#d0-vm-handshake-preflight-required)
    - [D1. Repository Secrets to Configure](#d1-repository-secrets-to-configure)
    - [D2. ci.yml — Pull Request Tests](#d2-ciyml--pull-request-tests)
    - [D3. deploy.yml — Full Build and Deploy](#d3-deployyml--full-build-and-deploy)
@@ -992,7 +992,45 @@ OTHER_SERVICE_URL=http://other-service:8082
 
 ---
 
-## Part D — GitHub Actions CI/CD Pipeline
+
+### D0. VM Handshake Preflight (Required)
+
+Before starting test/build/deploy, pipeline should first verify SSH connectivity to the VM.
+This prevents wasting CI minutes building images when VM access is broken.
+
+```yaml
+jobs:
+  vm-handshake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: VM handshake (SSH preflight)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_SSH_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            set -e
+            echo "VM handshake OK: $(hostname)"
+            command -v docker >/dev/null 2>&1
+            docker --version
+```
+
+Then set all other jobs to depend on this preflight:
+
+```yaml
+test:
+  needs: vm-handshake
+
+build-backend:
+  needs: [vm-handshake, test]
+
+build-frontend:
+  needs: [vm-handshake, test]
+
+deploy:
+  needs: [vm-handshake, test, build-backend, build-frontend]
+```
 
 ### D1. Repository Secrets to Configure
 
@@ -1974,3 +2012,4 @@ gcloud secrets versions add env --data-file=.env.new --project=MY_PROJECT_ID
 ---
 
 *This guide reflects the deployment architecture of Tasty ERP — a Java Spring Boot microservices app with a React/Vite frontend, deployed on GCP. The patterns generalize to any stack.*
+
