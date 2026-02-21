@@ -1,0 +1,51 @@
+spring:
+  threads:
+    virtual:
+      enabled: true
+
+logging:
+  structured:
+    format:
+      console: ecs
+  level:
+    root: INFO
+    ge.orderapp: DEBUG
+
+google:
+  sheets:
+    credentials-path: ""
+    spreadsheet-id: ""
+
+rsge:
+  enabled: false
+  full-sync-months: 2
+  connect-timeout-seconds: 30
+  chunk-days: 3
+  soap-namespace: http://tempuri.org/
+  date-format: yyyy-MM-dd'T'HH:mm:ss
+
+telegram:
+  enabled: false
+  api-base-url: https://api.telegram.org
+  connect-timeout-seconds: 10
+  request-timeout-seconds: 15
+  message:
+    date-format: dd.MM.yyyy
+    order-title: Order
+    manager-label: Manager
+    date-label: Date
+    customers-label: Customers
+    total-label: Total
+    total-suffix: customers
+
+app:
+  security:
+    login-rate:
+      max-attempts: 5
+      window-seconds: 300
+  sync:
+    max-retries: 3
+    retry-delays-ms: 2000,4000,8000
+    source-user: rsge_sync
+  drafts:
+    weekday-names: monday,tuesday,wednesday,thursday,friday,saturday,sunday

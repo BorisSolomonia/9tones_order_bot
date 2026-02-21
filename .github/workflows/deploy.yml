@@ -1,0 +1,231 @@
+name: Deploy Order App
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to deploy (default: latest commit SHA)'
+        required: false
+        type: string
+      rollback:
+        description: 'Rollback to previous deployment'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  AR_REPO: orderapp
+  IMAGE_PREFIX: us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/orderapp
+  DEPLOY_DIR: /home/${{ secrets.VM_SSH_USER }}/apps/order-app
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Run backend tests
+        working-directory: backend
+        run: mvn verify -B
+
+  build-backend:
+    needs: test
+    if: ${{ !inputs.rollback }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/orderapp-backend:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/orderapp-backend:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+  build-frontend:
+    needs: test
+    if: ${{ !inputs.rollback }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/orderapp-frontend:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/orderapp-frontend:latest
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  deploy:
+    needs: [test, build-backend, build-frontend]
+    if: ${{ always() && needs.test.result == 'success' && (needs.build-backend.result == 'success' && needs.build-frontend.result == 'success' || inputs.rollback) }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Determine deployment tag
+        id: tag
+        run: |
+          if [ "${{ inputs.rollback }}" == "true" ]; then
+            echo "TAG=rollback" >> $GITHUB_OUTPUT
+            echo "ROLLBACK=true" >> $GITHUB_OUTPUT
+          elif [ -n "${{ inputs.tag }}" ]; then
+            echo "TAG=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+            echo "ROLLBACK=false" >> $GITHUB_OUTPUT
+          else
+            echo "TAG=${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "ROLLBACK=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload deployment files
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_SSH_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          source: "docker/compose.production.yml,docker/Caddyfile.production"
+          target: ${{ env.DEPLOY_DIR }}
+          overwrite: true
+
+      - name: Deploy to VM
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_TAG: ${{ steps.tag.outputs.TAG }}
+          IS_ROLLBACK: ${{ steps.tag.outputs.ROLLBACK }}
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_SSH_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          envs: DEPLOY_TAG,IS_ROLLBACK
+          script: |
+            set -e
+            cd "${{ env.DEPLOY_DIR }}"
+            mkdir -p secrets backups
+
+            gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+            if [ "$IS_ROLLBACK" == "true" ]; then
+              echo "=== ROLLBACK MODE ==="
+              if [ -f backups/previous-tag ]; then
+                DEPLOY_TAG=$(cat backups/previous-tag)
+              else
+                echo "ERROR: No previous deployment"
+                exit 1
+              fi
+            fi
+
+            if [ -f .current-tag ]; then
+              cp .current-tag backups/previous-tag
+            fi
+            echo "$DEPLOY_TAG" > .current-tag
+
+            echo "Fetching secrets..."
+            gcloud secrets versions access latest --secret="orderapp-env" --project="${{ env.PROJECT_ID }}" > .env
+            gcloud secrets versions access latest --secret="orderapp-sa" --project="${{ env.PROJECT_ID }}" > secrets/service-account.json
+            chmod 600 .env
+            chmod 644 secrets/service-account.json
+
+            docker network create web 2>/dev/null || true
+            docker volume create caddy_data 2>/dev/null || true
+
+            export TAG="$DEPLOY_TAG"
+            export GCP_PROJECT_ID="${{ env.PROJECT_ID }}"
+
+            echo "Pulling images with tag: $DEPLOY_TAG"
+            docker compose -f docker/compose.production.yml pull
+
+            echo "Stopping current deployment..."
+            docker compose -f docker/compose.production.yml down --timeout 30 || true
+
+            echo "Starting new deployment..."
+            docker compose -f docker/compose.production.yml up -d
+
+            echo "Waiting for services..."
+            sleep 30
+
+            MAX_RETRIES=30
+            RETRY_COUNT=0
+            until curl -sf http://localhost/health >/dev/null 2>&1; do
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+                echo "ERROR: Health check failed after $MAX_RETRIES attempts"
+                docker compose -f docker/compose.production.yml ps
+                docker compose -f docker/compose.production.yml logs --tail=100
+                exit 1
+              fi
+              echo "Health check attempt $RETRY_COUNT/$MAX_RETRIES..."
+              sleep 5
+            done
+
+            echo "=== Deployment successful! ==="
+            docker compose -f docker/compose.production.yml ps
+
+      - name: Cleanup old images
+        uses: appleboy/ssh-action@v1.0.3
+        if: success()
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_SSH_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            docker image prune -f
+            for img in orderapp-backend orderapp-frontend; do
+              docker images "${{ env.IMAGE_PREFIX }}/$img" --format "{{.ID}} {{.Tag}}" | \
+                grep -v latest | tail -n +4 | awk '{print $1}' | xargs -r docker rmi || true
+            done

@@ -1,0 +1,87 @@
+spring:
+  application:
+    name: order-app
+  threads:
+    virtual:
+      enabled: true
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  structured:
+    format:
+      console: ecs
+  level:
+    root: ${LOG_LEVEL:INFO}
+    ge.orderapp: ${LOG_LEVEL:DEBUG}
+
+# Google Sheets
+google:
+  sheets:
+    credentials-path: ${GOOGLE_SHEETS_CREDENTIALS_PATH:}
+    spreadsheet-id: ${GOOGLE_SHEETS_SPREADSHEET_ID:}
+    enabled: ${GOOGLE_SHEETS_ENABLED:false}
+
+# RS.GE
+rsge:
+  endpoint: ${RSGE_ENDPOINT:https://services.rs.ge/WayBillService/WayBillService.asmx}
+  su: ${RSGE_SU:}
+  sp: ${RSGE_SP:}
+  timeout: ${RSGE_TIMEOUT:120}
+  connect-timeout-seconds: ${RSGE_CONNECT_TIMEOUT_SECONDS:30}
+  chunk-days: ${RSGE_CHUNK_DAYS:3}
+  chunk-parallelism: ${RSGE_CHUNK_PARALLELISM:3}
+  soap-namespace: ${RSGE_SOAP_NAMESPACE:http://tempuri.org/}
+  date-format: ${RSGE_DATE_FORMAT:yyyy-MM-dd'T'HH:mm:ss}
+  debug: ${RSGE_DEBUG:false}
+  debug-sample-count: ${RSGE_DEBUG_SAMPLE_COUNT:3}
+  debug-response-snippet-length: ${RSGE_DEBUG_RESPONSE_SNIPPET_LENGTH:0}
+  enabled: ${RSGE_ENABLED:false}
+  full-sync-months: ${RSGE_FULL_SYNC_MONTHS:2}
+
+# Telegram
+telegram:
+  bot-token: ${TELEGRAM_BOT_TOKEN:}
+  chat-id: ${TELEGRAM_CHAT_ID:}
+  enabled: ${TELEGRAM_ENABLED:false}
+  api-base-url: ${TELEGRAM_API_BASE_URL:https://api.telegram.org}
+  connect-timeout-seconds: ${TELEGRAM_CONNECT_TIMEOUT_SECONDS:10}
+  request-timeout-seconds: ${TELEGRAM_REQUEST_TIMEOUT_SECONDS:15}
+  message:
+    date-format: ${TELEGRAM_MESSAGE_DATE_FORMAT:dd.MM.yyyy}
+    order-title: ${TELEGRAM_MESSAGE_ORDER_TITLE:Order}
+    manager-label: ${TELEGRAM_MESSAGE_MANAGER_LABEL:Manager}
+    date-label: ${TELEGRAM_MESSAGE_DATE_LABEL:Date}
+    customers-label: ${TELEGRAM_MESSAGE_CUSTOMERS_LABEL:Customers}
+    total-label: ${TELEGRAM_MESSAGE_TOTAL_LABEL:Total}
+    total-suffix: ${TELEGRAM_MESSAGE_TOTAL_SUFFIX:customers}
+
+# App
+app:
+  flush-interval-seconds: ${APP_FLUSH_INTERVAL_SECONDS:5}
+  refresh-interval-seconds: ${APP_REFRESH_INTERVAL_SECONDS:300}
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}
+  security:
+    login-rate:
+      max-attempts: ${APP_SECURITY_LOGIN_RATE_MAX_ATTEMPTS:5}
+      window-seconds: ${APP_SECURITY_LOGIN_RATE_WINDOW_SECONDS:300}
+  sync:
+    max-retries: ${APP_SYNC_MAX_RETRIES:3}
+    retry-delays-ms: ${APP_SYNC_RETRY_DELAYS_MS:2000,4000,8000}
+    source-user: ${APP_SYNC_SOURCE_USER:rsge_sync}
+  drafts:
+    weekday-names: ${APP_DRAFTS_WEEKDAY_NAMES:}

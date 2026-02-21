@@ -1,0 +1,100 @@
+# Production Deployment - Order App
+# Deploy with: TAG=<commit-sha> docker compose -f compose.production.yml up -d
+
+services:
+  backend:
+    image: us-central1-docker.pkg.dev/${GCP_PROJECT_ID}/orderapp/orderapp-backend:${TAG}
+    container_name: orderapp-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "8080"
+    networks:
+      - web
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: "0.5"
+    volumes:
+      - ./secrets/service-account.json:/secrets/service-account.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    image: us-central1-docker.pkg.dev/${GCP_PROJECT_ID}/orderapp/orderapp-frontend:${TAG}
+    container_name: orderapp-frontend
+    restart: unless-stopped
+    expose:
+      - "3000"
+    networks:
+      - web
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: orderapp-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./Caddyfile.production:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+    networks:
+      - web
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.25"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      - backend
+      - frontend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy_data:
+    external: true
+  caddy_config:
+  caddy_logs:
+
+networks:
+  web:
+    external: true
