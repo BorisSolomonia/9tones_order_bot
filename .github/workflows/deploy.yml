@@ -39,8 +39,7 @@ jobs:
           script: |
             set -e
             echo "VM handshake OK: $(hostname)"
-            command -v docker >/dev/null 2>&1
-            docker --version
+            echo "SSH connectivity verified"
 
   test:
     needs: vm-handshake
@@ -171,6 +170,50 @@ jobs:
           envs: DEPLOY_TAG,IS_ROLLBACK
           script: |
             set -e
+
+            install_docker_if_missing() {
+              if command -v docker >/dev/null 2>&1 && docker --version >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+                echo "Docker and compose already installed"
+                return
+              fi
+
+              echo "Installing Docker/Compose on VM..."
+              sudo apt-get update -y
+              sudo apt-get install -y ca-certificates curl gnupg lsb-release docker.io docker-compose-plugin
+              sudo systemctl enable docker || true
+              sudo systemctl start docker || true
+              sudo usermod -aG docker "${USER}" || true
+            }
+
+            install_gcloud_if_missing() {
+              if command -v gcloud >/dev/null 2>&1; then
+                echo "gcloud already installed"
+                return
+              fi
+
+              echo "Installing gcloud CLI on VM..."
+              sudo apt-get update -y
+              sudo apt-get install -y apt-transport-https ca-certificates gnupg curl
+              curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+              echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list > /dev/null
+              sudo apt-get update -y
+              sudo apt-get install -y google-cloud-cli
+            }
+
+            install_docker_if_missing
+            install_gcloud_if_missing
+
+            DOCKER="docker"
+            if ! docker info >/dev/null 2>&1; then
+              if sudo docker info >/dev/null 2>&1; then
+                DOCKER="sudo docker"
+              else
+                echo "ERROR: Docker is installed but daemon is unavailable."
+                sudo systemctl status docker --no-pager || true
+                exit 1
+              fi
+            fi
+
             cd "${{ env.DEPLOY_DIR }}"
             mkdir -p secrets backups
 
@@ -197,20 +240,20 @@ jobs:
             chmod 600 .env
             chmod 644 secrets/service-account.json
 
-            docker network create web 2>/dev/null || true
-            docker volume create caddy_data 2>/dev/null || true
+            $DOCKER network create web 2>/dev/null || true
+            $DOCKER volume create caddy_data 2>/dev/null || true
 
             export TAG="$DEPLOY_TAG"
             export GCP_PROJECT_ID="${{ env.PROJECT_ID }}"
 
             echo "Pulling images with tag: $DEPLOY_TAG"
-            docker compose -f docker/compose.production.yml pull
+            $DOCKER compose -f docker/compose.production.yml pull
 
             echo "Stopping current deployment..."
-            docker compose -f docker/compose.production.yml down --timeout 30 || true
+            $DOCKER compose -f docker/compose.production.yml down --timeout 30 || true
 
             echo "Starting new deployment..."
-            docker compose -f docker/compose.production.yml up -d
+            $DOCKER compose -f docker/compose.production.yml up -d
 
             echo "Waiting for services..."
             sleep 30
@@ -221,8 +264,8 @@ jobs:
               RETRY_COUNT=$((RETRY_COUNT + 1))
               if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
                 echo "ERROR: Health check failed after $MAX_RETRIES attempts"
-                docker compose -f docker/compose.production.yml ps
-                docker compose -f docker/compose.production.yml logs --tail=100
+                $DOCKER compose -f docker/compose.production.yml ps
+                $DOCKER compose -f docker/compose.production.yml logs --tail=100
                 exit 1
               fi
               echo "Health check attempt $RETRY_COUNT/$MAX_RETRIES..."
@@ -230,7 +273,7 @@ jobs:
             done
 
             echo "=== Deployment successful! ==="
-            docker compose -f docker/compose.production.yml ps
+            $DOCKER compose -f docker/compose.production.yml ps
 
       - name: Cleanup old images
         uses: appleboy/ssh-action@v1.0.3
@@ -240,8 +283,12 @@ jobs:
           username: ${{ secrets.VM_SSH_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
-            docker image prune -f
+            DOCKER="docker"
+            if ! docker info >/dev/null 2>&1 && sudo docker info >/dev/null 2>&1; then
+              DOCKER="sudo docker"
+            fi
+            $DOCKER image prune -f
             for img in orderapp-backend orderapp-frontend; do
-              docker images "${{ env.IMAGE_PREFIX }}/$img" --format "{{.ID}} {{.Tag}}" | \
-                grep -v latest | tail -n +4 | awk '{print $1}' | xargs -r docker rmi || true
+              $DOCKER images "${{ env.IMAGE_PREFIX }}/$img" --format "{{.ID}} {{.Tag}}" | \
+                grep -v latest | tail -n +4 | awk '{print $1}' | xargs -r $DOCKER rmi || true
             done
