@@ -273,7 +273,7 @@ jobs:
             resolve_compose_runner
 
             cd "${{ env.DEPLOY_DIR }}"
-            mkdir -p secrets backups
+            mkdir -p docker/secrets backups
 
             gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
@@ -293,10 +293,10 @@ jobs:
             echo "$DEPLOY_TAG" > .current-tag
 
             echo "Fetching secrets..."
-            gcloud secrets versions access latest --secret="orderapp-env" --project="${{ env.PROJECT_ID }}" > .env
-            gcloud secrets versions access latest --secret="orderapp-sa" --project="${{ env.PROJECT_ID }}" > secrets/service-account.json
-            chmod 600 .env
-            chmod 644 secrets/service-account.json
+            gcloud secrets versions access latest --secret="orderapp-env" --project="${{ env.PROJECT_ID }}" > docker/.env
+            gcloud secrets versions access latest --secret="orderapp-sa" --project="${{ env.PROJECT_ID }}" > docker/secrets/service-account.json
+            chmod 600 docker/.env
+            chmod 644 docker/secrets/service-account.json
 
             $DOCKER network create web 2>/dev/null || true
             $DOCKER volume create caddy_data 2>/dev/null || true
