@@ -194,17 +194,45 @@ jobs:
             set -e
 
             install_docker_if_missing() {
-              if command -v docker >/dev/null 2>&1 && docker --version >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-                echo "Docker and compose already installed"
-                return
+              if command -v docker >/dev/null 2>&1 && docker --version >/dev/null 2>&1; then
+                if docker compose version >/dev/null 2>&1 || command -v docker-compose >/dev/null 2>&1; then
+                  echo "Docker and compose already installed"
+                  return
+                fi
               fi
 
-              echo "Installing Docker/Compose on VM..."
+              if command -v docker >/dev/null 2>&1 && docker --version >/dev/null 2>&1; then
+                echo "Docker installed, compose missing. Installing compose..."
+              else
+                echo "Installing Docker/Compose on VM..."
+              fi
+
               sudo apt-get update -y
-              sudo apt-get install -y ca-certificates curl gnupg lsb-release docker.io docker-compose-plugin
+              sudo apt-get install -y ca-certificates curl gnupg lsb-release docker.io
+              # Package names differ by distro; try plugin first, fallback to legacy docker-compose.
+              if ! sudo apt-get install -y docker-compose-plugin; then
+                sudo apt-get install -y docker-compose || true
+              fi
               sudo systemctl enable docker || true
               sudo systemctl start docker || true
               sudo usermod -aG docker "${USER}" || true
+            }
+
+            resolve_compose_runner() {
+              if $DOCKER compose version >/dev/null 2>&1; then
+                COMPOSE_RUNNER="$DOCKER compose"
+                return
+              fi
+              if command -v docker-compose >/dev/null 2>&1; then
+                if [ "$DOCKER" = "sudo docker" ]; then
+                  COMPOSE_RUNNER="sudo docker-compose"
+                else
+                  COMPOSE_RUNNER="docker-compose"
+                fi
+                return
+              fi
+              echo "ERROR: Neither 'docker compose' nor 'docker-compose' is available on VM."
+              exit 1
             }
 
             install_gcloud_if_missing() {
@@ -235,6 +263,7 @@ jobs:
                 exit 1
               fi
             fi
+            resolve_compose_runner
 
             cd "${{ env.DEPLOY_DIR }}"
             mkdir -p secrets backups
@@ -269,13 +298,13 @@ jobs:
             export GCP_PROJECT_ID="${{ env.PROJECT_ID }}"
 
             echo "Pulling images with tag: $DEPLOY_TAG"
-            $DOCKER compose -f docker/compose.production.yml pull
+            $COMPOSE_RUNNER -f docker/compose.production.yml pull
 
             echo "Stopping current deployment..."
-            $DOCKER compose -f docker/compose.production.yml down --timeout 30 || true
+            $COMPOSE_RUNNER -f docker/compose.production.yml down --timeout 30 || true
 
             echo "Starting new deployment..."
-            $DOCKER compose -f docker/compose.production.yml up -d
+            $COMPOSE_RUNNER -f docker/compose.production.yml up -d
 
             echo "Waiting for services..."
             sleep 30
@@ -286,8 +315,8 @@ jobs:
               RETRY_COUNT=$((RETRY_COUNT + 1))
               if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
                 echo "ERROR: Health check failed after $MAX_RETRIES attempts"
-                $DOCKER compose -f docker/compose.production.yml ps
-                $DOCKER compose -f docker/compose.production.yml logs --tail=100
+                $COMPOSE_RUNNER -f docker/compose.production.yml ps
+                $COMPOSE_RUNNER -f docker/compose.production.yml logs --tail=100
                 exit 1
               fi
               echo "Health check attempt $RETRY_COUNT/$MAX_RETRIES..."
@@ -295,7 +324,7 @@ jobs:
             done
 
             echo "=== Deployment successful! ==="
-            $DOCKER compose -f docker/compose.production.yml ps
+            $COMPOSE_RUNNER -f docker/compose.production.yml ps
 
       - name: Cleanup old images
         uses: appleboy/ssh-action@v1.0.3
