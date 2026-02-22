@@ -185,11 +185,12 @@ jobs:
         env:
           DEPLOY_TAG: ${{ steps.tag.outputs.TAG }}
           IS_ROLLBACK: ${{ steps.tag.outputs.ROLLBACK }}
+          GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY }}
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_SSH_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
-          envs: DEPLOY_TAG,IS_ROLLBACK
+          envs: DEPLOY_TAG,IS_ROLLBACK,GCP_SA_KEY_JSON
           script: |
             set -e
 
@@ -252,6 +253,12 @@ jobs:
 
             install_docker_if_missing
             install_gcloud_if_missing
+
+            # Authenticate gcloud using CI service account key (do not rely on VM metadata scopes).
+            SA_KEY_PATH="/tmp/orderapp-github-sa.json"
+            printf '%s' "$GCP_SA_KEY_JSON" > "$SA_KEY_PATH"
+            gcloud auth activate-service-account --key-file="$SA_KEY_PATH" --project="${{ env.PROJECT_ID }}"
+            rm -f "$SA_KEY_PATH"
 
             DOCKER="docker"
             if ! docker info >/dev/null 2>&1; then
