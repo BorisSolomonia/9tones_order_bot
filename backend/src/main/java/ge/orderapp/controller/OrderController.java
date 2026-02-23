@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Set;
+import java.nio.charset.StandardCharsets;
 
 @RestController
 @RequestMapping("/api/v1/orders")
@@ -75,11 +76,16 @@ public class OrderController {
         }
 
         String csv = orderService.exportCsv(dateFrom, dateTo, managerId);
-        byte[] bytes = csv.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] csvBytes = csv.getBytes(StandardCharsets.UTF_8);
+        byte[] bom = new byte[] {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF};
+        byte[] bytes = new byte[bom.length + csvBytes.length];
+        System.arraycopy(bom, 0, bytes, 0, bom.length);
+        System.arraycopy(csvBytes, 0, bytes, bom.length, csvBytes.length);
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=orders.csv")
-                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"orders.csv\"; filename*=UTF-8''orders.csv")
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
                 .body(bytes);
     }
 }
