@@ -310,12 +310,13 @@ public class InMemoryStore {
     }
 
     public OrderItemDto getOrderItem(String itemId) {
-        return orderItems.get(itemId);
+        return enrichBoardFromCustomer(orderItems.get(itemId));
     }
 
     public List<OrderItemDto> getOrderItems(String orderId) {
         return orderItems.values().stream()
                 .filter(i -> orderId.equals(i.orderId()))
+                .map(this::enrichBoardFromCustomer)
                 .collect(Collectors.toList());
     }
 
@@ -438,6 +439,23 @@ public class InMemoryStore {
 
     public void setReady(boolean ready) {
         this.ready = ready;
+    }
+
+    // --- Board enrichment ---
+
+    /**
+     * If an order item has no stored board, derive it from the customer's current board assignment.
+     * Only auto-fills when the customer has exactly one board (unambiguous). Multiple boards require
+     * explicit assignment by the accountant via the inline editor.
+     */
+    private OrderItemDto enrichBoardFromCustomer(OrderItemDto item) {
+        if (item == null) return null;
+        if (item.board() != null) return item;
+        if (item.customerId() == null || item.customerId().isBlank()) return item;
+        CopyOnWriteArrayList<String> boards = customerBoards.get(item.customerId());
+        if (boards == null || boards.size() != 1) return item;
+        return new OrderItemDto(item.itemId(), item.orderId(), item.customerName(),
+                item.customerId(), item.comment(), item.createdAt(), boards.get(0));
     }
 
     // --- Helpers ---
