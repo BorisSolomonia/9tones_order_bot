@@ -49,15 +49,17 @@ public class CustomerService {
         String now = Instant.now().toString();
         String id = UUID.randomUUID().toString();
 
-        if (request.tin() != null && !request.tin().isBlank()) {
-            CustomerDto existing = store.getCustomerByTin(request.tin());
+        String normalizedTin = normalizeTin(request.tin());
+
+        if (!normalizedTin.isEmpty()) {
+            CustomerDto existing = store.getCustomerByTin(normalizedTin);
             if (existing != null) {
-                throw new BadRequestException("Customer with TIN " + request.tin() + " already exists");
+                throw new BadRequestException("Customer with TIN " + normalizedTin + " already exists");
             }
         }
 
         CustomerDto customer = new CustomerDto(
-                id, sanitize(request.name()), sanitize(request.tin()),
+                id, sanitize(request.name()), normalizedTin.isEmpty() ? null : normalizedTin,
                 0, addedBy, true, now, now, null);
 
         store.putCustomer(customer);
@@ -189,5 +191,10 @@ public class CustomerService {
         if (input == null) return null;
         // Strip control characters
         return input.replaceAll("[\\x00-\\x1F\\x7F]", "").trim();
+    }
+
+    private String normalizeTin(String tin) {
+        if (tin == null || tin.isBlank()) return "";
+        return tin.trim().replaceAll("[\\s\\-._]+", "");
     }
 }

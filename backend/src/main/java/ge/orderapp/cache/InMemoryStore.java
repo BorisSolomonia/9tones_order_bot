@@ -44,8 +44,11 @@ public class InMemoryStore {
     // --- Load from raw Sheets data ---
 
     public void loadCustomers(List<List<Object>> rows) {
-        customers.clear();
-        customersByTin.clear();
+        // Build new maps first, then swap — avoids a "clear → empty window" race
+        // where a concurrent sync sees all TINs as missing and re-appends everything.
+        Map<String, CustomerDto> incoming = new HashMap<>(rows.size() + 1);
+        Map<String, CustomerDto> incomingByTin = new HashMap<>();
+
         for (List<Object> row : rows) {
             if (row.isEmpty()) continue;
             CustomerDto c = new CustomerDto(
@@ -53,11 +56,20 @@ public class InMemoryStore {
                     intVal(row, 3), str(row, 4),
                     "TRUE".equalsIgnoreCase(str(row, 5)),
                     str(row, 6), str(row, 7), null);
-            customers.put(c.customerId(), c);
-            if (c.tin() != null && !c.tin().isBlank()) {
-                customersByTin.put(c.tin(), c);
+            if (c.customerId() == null || c.customerId().isBlank()) continue;
+            incoming.put(c.customerId(), c);
+            String tin = normalizeTin(c.tin());
+            if (!tin.isEmpty()) {
+                incomingByTin.put(tin, c);
             }
         }
+
+        // Merge into live maps without ever leaving them empty.
+        customers.putAll(incoming);
+        customers.keySet().retainAll(incoming.keySet());
+        customersByTin.putAll(incomingByTin);
+        customersByTin.keySet().retainAll(incomingByTin.keySet());
+
         log.info("Loaded {} customers into memory", customers.size());
     }
 
@@ -224,13 +236,16 @@ public class InMemoryStore {
     }
 
     public CustomerDto getCustomerByTin(String tin) {
-        return customersByTin.get(tin);
+        String normalized = normalizeTin(tin);
+        if (normalized.isEmpty()) return null;
+        return customersByTin.get(normalized);
     }
 
     public void putCustomer(CustomerDto customer) {
         customers.put(customer.customerId(), customer);
-        if (customer.tin() != null && !customer.tin().isBlank()) {
-            customersByTin.put(customer.tin(), customer);
+        String tin = normalizeTin(customer.tin());
+        if (!tin.isEmpty()) {
+            customersByTin.put(tin, customer);
         }
     }
 
@@ -459,6 +474,12 @@ public class InMemoryStore {
     }
 
     // --- Helpers ---
+
+    /** Strip whitespace, hyphens, dots and underscores from a TIN so lookups are format-agnostic. */
+    private String normalizeTin(String tin) {
+        if (tin == null || tin.isBlank()) return "";
+        return tin.trim().replaceAll("[\\s\\-._]+", "");
+    }
 
     private String str(List<Object> row, int index) {
         if (index >= row.size()) return "";
