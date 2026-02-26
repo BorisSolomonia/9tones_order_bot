@@ -103,55 +103,8 @@ public class SheetsClient {
     public void flushPendingWrites() {
         if (pendingWrites.isEmpty()) return;
         if (!flushLock.tryLock()) return;
-
         try {
-            Map<String, List<WriteOperation>> byTab = new LinkedHashMap<>();
-            WriteOperation op;
-            while ((op = pendingWrites.poll()) != null) {
-                byTab.computeIfAbsent(op.tab, k -> new ArrayList<>()).add(op);
-            }
-
-            for (Map.Entry<String, List<WriteOperation>> entry : byTab.entrySet()) {
-                String tab = entry.getKey();
-                List<WriteOperation> ops = entry.getValue();
-
-                for (WriteOperation writeOp : ops) {
-                    try {
-                        if (writeOp.type == WriteType.APPEND) {
-                            ValueRange body = new ValueRange()
-                                    .setMajorDimension("ROWS")
-                                    .setRange(tab + "!A1")
-                                    .setValues(normalizeRows(writeOp.rows));
-                            AppendValuesResponse appendResponse = sheetsService.spreadsheets().values()
-                                    .append(spreadsheetId, tab + "!A1", body)
-                                    .setValueInputOption("RAW")
-                                    .setInsertDataOption("INSERT_ROWS")
-                                    .setIncludeValuesInResponse(false)
-                                    .execute();
-                            if (appendResponse != null && appendResponse.getUpdates() != null) {
-                                log.info("Sheets append: tab={}, updatedRange={}, updatedRows={}, updatedColumns={}",
-                                        tab,
-                                        appendResponse.getUpdates().getUpdatedRange(),
-                                        appendResponse.getUpdates().getUpdatedRows(),
-                                        appendResponse.getUpdates().getUpdatedColumns());
-                            }
-                        } else if (writeOp.type == WriteType.UPDATE) {
-                            String range = tab + "!A" + (writeOp.rowIndex + 1);
-                            ValueRange body = new ValueRange()
-                                    .setMajorDimension("ROWS")
-                                    .setValues(normalizeRows(writeOp.rows));
-                            sheetsService.spreadsheets().values()
-                                    .update(spreadsheetId, range, body)
-                                    .setValueInputOption("RAW")
-                                    .execute();
-                        }
-                    } catch (Exception e) {
-                        log.error("Failed to flush write to tab {}: {}", tab, e.getMessage());
-                        // Re-queue failed write
-                        pendingWrites.add(writeOp);
-                    }
-                }
-            }
+            doFlush();
         } finally {
             flushLock.unlock();
         }
@@ -163,9 +116,69 @@ public class SheetsClient {
     public void periodicRefresh() {
         log.info("Periodic refresh from Google Sheets...");
         try {
+            // Flush all pending writes FIRST so the reload sees up-to-date data.
+            // Without this, customers added by a concurrent sync but not yet flushed
+            // would be removed from memory by the retainAll in loadCustomers(), causing
+            // the next sync to re-append them as "new" — producing duplicates.
+            flushLock.lock();
+            try {
+                doFlush();
+            } finally {
+                flushLock.unlock();
+            }
             loadAllTabs();
         } catch (Exception e) {
             log.error("Periodic refresh failed", e);
+        }
+    }
+
+    private void doFlush() {
+        Map<String, List<WriteOperation>> byTab = new LinkedHashMap<>();
+        WriteOperation op;
+        while ((op = pendingWrites.poll()) != null) {
+            byTab.computeIfAbsent(op.tab, k -> new ArrayList<>()).add(op);
+        }
+
+        for (Map.Entry<String, List<WriteOperation>> entry : byTab.entrySet()) {
+            String tab = entry.getKey();
+            List<WriteOperation> ops = entry.getValue();
+
+            for (WriteOperation writeOp : ops) {
+                try {
+                    if (writeOp.type == WriteType.APPEND) {
+                        ValueRange body = new ValueRange()
+                                .setMajorDimension("ROWS")
+                                .setRange(tab + "!A1")
+                                .setValues(normalizeRows(writeOp.rows));
+                        AppendValuesResponse appendResponse = sheetsService.spreadsheets().values()
+                                .append(spreadsheetId, tab + "!A1", body)
+                                .setValueInputOption("RAW")
+                                .setInsertDataOption("INSERT_ROWS")
+                                .setIncludeValuesInResponse(false)
+                                .execute();
+                        if (appendResponse != null && appendResponse.getUpdates() != null) {
+                            log.info("Sheets append: tab={}, updatedRange={}, updatedRows={}, updatedColumns={}",
+                                    tab,
+                                    appendResponse.getUpdates().getUpdatedRange(),
+                                    appendResponse.getUpdates().getUpdatedRows(),
+                                    appendResponse.getUpdates().getUpdatedColumns());
+                        }
+                    } else if (writeOp.type == WriteType.UPDATE) {
+                        String range = tab + "!A" + (writeOp.rowIndex + 1);
+                        ValueRange body = new ValueRange()
+                                .setMajorDimension("ROWS")
+                                .setValues(normalizeRows(writeOp.rows));
+                        sheetsService.spreadsheets().values()
+                                .update(spreadsheetId, range, body)
+                                .setValueInputOption("RAW")
+                                .execute();
+                    }
+                } catch (Exception e) {
+                    log.error("Failed to flush write to tab {}: {}", tab, e.getMessage());
+                    // Re-queue failed write
+                    pendingWrites.add(writeOp);
+                }
+            }
         }
     }
 

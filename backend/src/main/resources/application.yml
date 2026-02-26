@@ -50,7 +50,7 @@ rsge:
   debug-sample-count: ${RSGE_DEBUG_SAMPLE_COUNT:3}
   debug-response-snippet-length: ${RSGE_DEBUG_RESPONSE_SNIPPET_LENGTH:0}
   enabled: ${RSGE_ENABLED:false}
-  full-sync-months: ${RSGE_FULL_SYNC_MONTHS:2}
+  full-sync-months: ${RSGE_FULL_SYNC_MONTHS:24}
 
 # Telegram
 telegram:

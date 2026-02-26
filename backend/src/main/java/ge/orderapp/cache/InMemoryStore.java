@@ -48,6 +48,7 @@ public class InMemoryStore {
         // where a concurrent sync sees all TINs as missing and re-appends everything.
         Map<String, CustomerDto> incoming = new HashMap<>(rows.size() + 1);
         Map<String, CustomerDto> incomingByTin = new HashMap<>();
+        int skippedDuplicates = 0;
 
         for (List<Object> row : rows) {
             if (row.isEmpty()) continue;
@@ -57,11 +58,29 @@ public class InMemoryStore {
                     "TRUE".equalsIgnoreCase(str(row, 5)),
                     str(row, 6), str(row, 7), null);
             if (c.customerId() == null || c.customerId().isBlank()) continue;
-            incoming.put(c.customerId(), c);
+
             String tin = normalizeTin(c.tin());
             if (!tin.isEmpty()) {
+                CustomerDto existingForTin = incomingByTin.get(tin);
+                if (existingForTin != null) {
+                    // Duplicate TIN row in the sheet — keep the one with the higher frequency
+                    // score (more established customer record). Log so the stale row can be
+                    // manually cleaned up in Sheets.
+                    if (c.frequencyScore() > existingForTin.frequencyScore()) {
+                        incoming.remove(existingForTin.customerId());
+                        incomingByTin.put(tin, c);
+                        incoming.put(c.customerId(), c);
+                    }
+                    skippedDuplicates++;
+                    log.warn("Duplicate TIN {} in Customers sheet: keeping id={} (score={}), skipping id={} (score={})",
+                            tin,
+                            incomingByTin.get(tin).customerId(), incomingByTin.get(tin).frequencyScore(),
+                            c.customerId(), c.frequencyScore());
+                    continue;
+                }
                 incomingByTin.put(tin, c);
             }
+            incoming.put(c.customerId(), c);
         }
 
         // Merge into live maps without ever leaving them empty.
@@ -70,7 +89,7 @@ public class InMemoryStore {
         customersByTin.putAll(incomingByTin);
         customersByTin.keySet().retainAll(incomingByTin.keySet());
 
-        log.info("Loaded {} customers into memory", customers.size());
+        log.info("Loaded {} customers into memory (skippedDuplicates={})", customers.size(), skippedDuplicates);
     }
 
     public void loadUsers(List<List<Object>> rows) {
