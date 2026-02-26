@@ -16,6 +16,7 @@ export interface Customer {
   active: boolean;
   createdAt: string;
   updatedAt: string;
+  board?: string;
 }
 
 export interface Order {
@@ -38,6 +39,7 @@ export interface OrderItem {
   customerId: string;
   comment: string;
   createdAt: string;
+  board?: string;
 }
 
 export interface Draft {
@@ -53,6 +55,7 @@ export interface DraftItem {
   customerName: string;
   customerId: string;
   comment: string;
+  board?: string;
 }
 
 export interface MyCustomer {
@@ -79,4 +82,5 @@ export interface SelectedCustomer {
   customerName: string;
   customerId?: string;
   comment: string;
+  board?: string;
 }

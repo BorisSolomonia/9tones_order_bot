@@ -1,7 +1,9 @@
 package ge.orderapp.controller;
 
 import ge.orderapp.dto.request.CreateOrderRequest;
+import ge.orderapp.dto.request.UpdateOrderItemRequest;
 import ge.orderapp.dto.response.OrderDto;
+import ge.orderapp.dto.response.OrderItemDto;
 import ge.orderapp.dto.response.UserDto;
 import ge.orderapp.exception.ForbiddenException;
 import ge.orderapp.security.SessionAuthFilter;
@@ -62,6 +64,19 @@ public class OrderController {
             throw new ForbiddenException("Managers can only view their own orders");
         }
         return ResponseEntity.ok(order);
+    }
+
+    @PatchMapping("/{orderId}/items/{itemId}")
+    public ResponseEntity<OrderItemDto> updateItemBoard(
+            @PathVariable String orderId,
+            @PathVariable String itemId,
+            @RequestBody UpdateOrderItemRequest req,
+            HttpServletRequest request) {
+        UserDto user = SessionAuthFilter.getCurrentUser(request);
+        if (!Set.of("ACCOUNTANT", "ADMIN").contains(user.role())) {
+            throw new ForbiddenException("ACCOUNTANT or ADMIN role required");
+        }
+        return ResponseEntity.ok(orderService.updateOrderItemBoard(orderId, itemId, req.board()));
     }
 
     @GetMapping("/export")

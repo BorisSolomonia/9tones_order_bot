@@ -43,12 +43,14 @@ public class OrderService {
         List<OrderItemDto> items = new ArrayList<>();
         for (CreateOrderRequest.OrderItemRequest itemReq : request.items()) {
             String itemId = UUID.randomUUID().toString();
+            String board = sanitize(itemReq.board());
             OrderItemDto item = new OrderItemDto(
                     itemId, orderId,
                     sanitize(itemReq.customerName()),
                     itemReq.customerId(),
                     sanitize(itemReq.comment()),
-                    now);
+                    now,
+                    board);
             items.add(item);
             store.putOrderItem(item);
 
@@ -57,7 +59,8 @@ public class OrderService {
                         item.itemId(), item.orderId(), item.customerName(),
                         item.customerId() != null ? item.customerId() : "",
                         item.comment() != null ? item.comment() : "",
-                        item.createdAt()));
+                        item.createdAt(),
+                        board != null ? board : ""));
             }
         }
 
@@ -118,10 +121,36 @@ public class OrderService {
                 order.telegramSentAt(), order.itemCount(), order.createdAt(), items);
     }
 
+    public OrderItemDto updateOrderItemBoard(String orderId, String itemId, String board) {
+        OrderDto order = store.getOrder(orderId);
+        if (order == null) throw new NotFoundException("Order not found: " + orderId);
+        OrderItemDto existing = store.getOrderItem(itemId);
+        if (existing == null || !orderId.equals(existing.orderId())) {
+            throw new NotFoundException("Order item not found: " + itemId);
+        }
+
+        String sanitizedBoard = sanitize(board);
+        store.updateOrderItemBoard(itemId, sanitizedBoard);
+
+        if (sheetsClient != null) {
+            int rowIndex = sheetsClient.findRowIndex("Order_Items", itemId);
+            if (rowIndex > 0) {
+                sheetsClient.updateRow("Order_Items", rowIndex, List.of(
+                        existing.itemId(), existing.orderId(), existing.customerName(),
+                        existing.customerId() != null ? existing.customerId() : "",
+                        existing.comment() != null ? existing.comment() : "",
+                        existing.createdAt(),
+                        sanitizedBoard != null ? sanitizedBoard : ""));
+            }
+        }
+
+        return store.getOrderItem(itemId);
+    }
+
     public String exportCsv(String dateFrom, String dateTo, String managerId) {
         List<OrderDto> allOrders = store.getOrders(null, managerId, 0, Integer.MAX_VALUE);
         StringBuilder csv = new StringBuilder();
-        csv.append("Order ID,Manager,Date,Status,Customer,Comment\n");
+        csv.append("Order ID,Manager,Date,Status,Customer,Comment,Board\n");
 
         for (OrderDto order : allOrders) {
             if (dateFrom != null && !dateFrom.isBlank() && order.date().compareTo(dateFrom) < 0) continue;
@@ -134,7 +163,8 @@ public class OrderService {
                 csv.append(escapeCsv(order.date())).append(",");
                 csv.append(escapeCsv(order.status())).append(",");
                 csv.append(escapeCsv(item.customerName())).append(",");
-                csv.append(escapeCsv(item.comment() != null ? item.comment() : "")).append("\n");
+                csv.append(escapeCsv(item.comment() != null ? item.comment() : "")).append(",");
+                csv.append(escapeCsv(item.board() != null ? item.board() : "")).append("\n");
             }
         }
         return csv.toString();

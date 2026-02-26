@@ -11,6 +11,7 @@ public record CreateDraftRequest(
     public record DraftItemRequest(
             String customerName,
             String customerId,
-            String comment
+            String comment,
+            String board
     ) {}
 }

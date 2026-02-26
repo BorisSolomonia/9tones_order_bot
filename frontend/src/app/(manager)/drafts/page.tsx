@@ -17,6 +17,10 @@ import { formatDateTime } from '@/lib/utils';
 import { Trash2, Upload, Plus, ArrowLeft, X, Search, Users } from 'lucide-react';
 import type { Draft, DraftItem, Customer, SelectedCustomer } from '@/types';
 
+function compositeKey(customerId: string, board: string | undefined) {
+  return `${customerId}|${board ?? ''}`;
+}
+
 export default function DraftsPage() {
   const { data: drafts, isLoading } = useDrafts();
   const createDraft = useCreateDraft();
@@ -80,14 +84,20 @@ export default function DraftsPage() {
     }
   };
 
-  const removeItemFromDraft = useCallback((customerId: string) => {
-    setDraftItems((prev) => prev.filter((i) => i.customerId !== customerId));
+  const removeItemFromDraft = useCallback((customerId: string, board: string | undefined) => {
+    setDraftItems((prev) =>
+      prev.filter(
+        (i) => !(i.customerId === customerId && (i.board ?? '') === (board ?? ''))
+      )
+    );
   }, []);
 
   const addCustomerToDraft = useCallback((customer: Customer) => {
     setDraftItems((prev) => {
-      if (prev.some((i) => i.customerId === customer.customerId)) return prev;
-      return [...prev, { customerName: customer.name, customerId: customer.customerId, comment: '' }];
+      if (prev.some((i) => i.customerId === customer.customerId && (i.board ?? '') === (customer.board ?? ''))) {
+        return prev;
+      }
+      return [...prev, { customerName: customer.name, customerId: customer.customerId, comment: '', board: customer.board }];
     });
   }, []);
 
@@ -101,6 +111,7 @@ export default function DraftsPage() {
           customerName: i.customerName,
           customerId: i.customerId,
           comment: i.comment || '',
+          board: i.board ?? undefined,
         })),
       });
       setActiveDraft(updated);
@@ -174,7 +185,7 @@ export default function DraftsPage() {
                   <div className="flex flex-wrap gap-1 mt-2">
                     {draft.items.slice(0, 4).map((item, i) => (
                       <Badge key={i} variant="outline" className="text-[10px]">
-                        {item.customerName}
+                        {item.customerName}{item.board ? ` / ${item.board}` : ''}
                       </Badge>
                     ))}
                     {draft.items.length > 4 && (
@@ -241,7 +252,7 @@ interface DraftDetailProps {
   items: DraftItem[];
   showAddCustomers: boolean;
   onToggleAddCustomers: () => void;
-  onRemoveItem: (customerId: string) => void;
+  onRemoveItem: (customerId: string, board: string | undefined) => void;
   onAddCustomer: (customer: Customer) => void;
   onSave: () => void;
   onLoad: () => void;
@@ -263,7 +274,7 @@ function DraftDetail({
   onBack,
   isSaving,
 }: DraftDetailProps) {
-  const itemIds = new Set(items.map((i) => i.customerId));
+  const itemKeys = new Set(items.map((i) => compositeKey(i.customerId, i.board)));
 
   return (
     <div className="fixed inset-0 z-50 bg-background flex flex-col">
@@ -288,7 +299,7 @@ function DraftDetail({
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {showAddCustomers ? (
           <CustomerSearchPanel
-            existingIds={itemIds}
+            existingKeys={itemKeys}
             onAddCustomer={onAddCustomer}
             onClose={onToggleAddCustomers}
           />
@@ -300,12 +311,17 @@ function DraftDetail({
             ) : (
               items.map((item) => (
                 <div
-                  key={item.customerId}
+                  key={compositeKey(item.customerId, item.board)}
                   className="flex items-center gap-3 px-4 py-3 border-b"
                 >
-                  <span className="flex-1 text-sm truncate">{item.customerName}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm truncate">{item.customerName}</span>
+                    {item.board && (
+                      <span className="ml-2 text-xs text-primary/70">{item.board}</span>
+                    )}
+                  </div>
                   <button
-                    onClick={() => onRemoveItem(item.customerId)}
+                    onClick={() => onRemoveItem(item.customerId, item.board)}
                     className="shrink-0 p-2 min-h-[44px] flex items-center"
                   >
                     <X className="h-4 w-4 text-destructive" />
@@ -345,12 +361,12 @@ function DraftDetail({
 
 // ─── Customer Search Panel (inline in draft detail) ──────────────────
 interface CustomerSearchPanelProps {
-  existingIds: Set<string>;
+  existingKeys: Set<string>;
   onAddCustomer: (customer: Customer) => void;
   onClose: () => void;
 }
 
-function CustomerSearchPanel({ existingIds, onAddCustomer, onClose }: CustomerSearchPanelProps) {
+function CustomerSearchPanel({ existingKeys, onAddCustomer, onClose }: CustomerSearchPanelProps) {
   const { customers, isLoading, search, setSearch } = useCustomers('all');
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -402,10 +418,11 @@ function CustomerSearchPanel({ existingIds, onAddCustomer, onClose }: CustomerSe
           >
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const customer = customers[virtualRow.index];
-              const alreadyAdded = existingIds.has(customer.customerId);
+              const key = compositeKey(customer.customerId, customer.board);
+              const alreadyAdded = existingKeys.has(key);
               return (
                 <div
-                  key={customer.customerId}
+                  key={key}
                   style={{
                     position: 'absolute',
                     top: 0,
@@ -432,7 +449,12 @@ function CustomerSearchPanel({ existingIds, onAddCustomer, onClose }: CustomerSe
                     }`}
                   >
                     <Checkbox checked={alreadyAdded} disabled className="h-4 w-4 shrink-0" />
-                    <span className="text-[11px] truncate">{customer.name}</span>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[11px] truncate">{customer.name}</span>
+                      {customer.board && (
+                        <span className="text-[9px] text-primary/70 truncate">{customer.board}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               );

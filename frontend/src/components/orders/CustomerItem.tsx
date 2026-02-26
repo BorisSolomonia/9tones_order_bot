@@ -27,9 +27,12 @@ export function CustomerItem({ customer, isSelected, isMy, comment, onToggle, on
       <Checkbox checked={isSelected} onCheckedChange={onToggle} className="h-4 w-4 shrink-0" />
       <button
         onClick={onToggle}
-        className="min-w-0 shrink-0 max-w-[38%] text-left min-h-[36px] flex items-center"
+        className="min-w-0 shrink-0 max-w-[35%] text-left min-h-[36px] flex flex-col justify-center"
       >
         <span className="text-[11px] leading-tight truncate">{customer.name}</span>
+        {customer.board && (
+          <span className="text-[9px] text-primary/70 truncate">{customer.board}</span>
+        )}
       </button>
       <input
         type="text"

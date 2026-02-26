@@ -77,10 +77,16 @@ public class MockConfig {
             for (String[] cd : customerData) {
                 store.putCustomer(new CustomerDto(
                         cd[0], cd[1], cd[2], Integer.parseInt(cd[3]),
-                        "rsge_sync", true, now, now));
+                        "rsge_sync", true, now, now, null));
             }
 
             store.addMyCustomer(new MyCustomerDto("u2", "შპს ბახუსი", "c2", now));
+
+            // Seed board assignments for development
+            store.addBoard("c1", "საბურთალო");
+            store.addBoard("c1", "დიღომი");
+            store.addBoard("c2", "ვაკე");
+            // c50 has no board → appears once with board=null
         }
 
         store.setReady(true);

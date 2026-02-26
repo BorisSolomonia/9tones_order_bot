@@ -81,6 +81,9 @@ function OrderDetail({ orderId }: { orderId: string }) {
         <div key={item.itemId} className="py-2 border-b last:border-b-0">
           <p className="text-sm">
             {i + 1}. {item.customerName}
+            {item.board && (
+              <span className="ml-1 text-[10px] bg-blue-50 text-blue-700 px-1 rounded">{item.board}</span>
+            )}
             {item.comment && <span className="text-muted-foreground"> - {item.comment}</span>}
           </p>
         </div>

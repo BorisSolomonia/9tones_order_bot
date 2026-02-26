@@ -1,5 +1,6 @@
 package ge.orderapp.controller;
 
+import ge.orderapp.dto.request.AddBoardRequest;
 import ge.orderapp.dto.request.AddMyCustomerRequest;
 import ge.orderapp.dto.request.CreateCustomerRequest;
 import ge.orderapp.dto.request.UpdateCustomerRequest;
@@ -84,6 +85,33 @@ public class CustomerController {
                                                    HttpServletRequest request) {
         UserDto user = SessionAuthFilter.getCurrentUser(request);
         customerService.removeMyCustomer(user.userId(), customerId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // --- Board management (ADMIN only) ---
+
+    @GetMapping("/{id}/boards")
+    public ResponseEntity<List<String>> getBoards(@PathVariable String id, HttpServletRequest request) {
+        requireRole(request, "ADMIN");
+        return ResponseEntity.ok(customerService.getBoards(id));
+    }
+
+    @PostMapping("/{id}/boards")
+    public ResponseEntity<Void> addBoard(@PathVariable String id,
+                                          @Valid @RequestBody AddBoardRequest req,
+                                          HttpServletRequest request) {
+        requireRole(request, "ADMIN");
+        UserDto user = SessionAuthFilter.getCurrentUser(request);
+        customerService.addBoard(id, req.board(), user.username());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{id}/boards/{board}")
+    public ResponseEntity<Void> removeBoard(@PathVariable String id,
+                                             @PathVariable String board,
+                                             HttpServletRequest request) {
+        requireRole(request, "ADMIN");
+        customerService.removeBoard(id, board);
         return ResponseEntity.noContent().build();
     }
 

@@ -8,5 +8,6 @@ public record CustomerDto(
         String addedBy,
         boolean active,
         String createdAt,
-        String updatedAt
+        String updatedAt,
+        String board
 ) {}

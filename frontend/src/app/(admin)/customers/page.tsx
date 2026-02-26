@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -11,8 +11,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { GEO } from '@/lib/geo';
 import { FRONTEND_CONFIG } from '@/lib/config';
+import { useCustomerBoards, useAddBoard, useRemoveBoard } from '@/hooks/use-customer-boards';
 import type { Customer } from '@/types';
-import { Plus, Search, Trash2 } from 'lucide-react';
+import { Plus, Search, Trash2, X } from 'lucide-react';
 
 export default function CustomersPage() {
   const queryClient = useQueryClient();
@@ -20,6 +21,7 @@ export default function CustomersPage() {
   const [debounced, setDebounced] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: '', tin: '' });
+  const [boardsCustomer, setBoardsCustomer] = useState<Customer | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search), FRONTEND_CONFIG.search.debounceMs);
@@ -60,6 +62,11 @@ export default function CustomersPage() {
     onError: (err: any) => toast.error(err.message),
   });
 
+  // Deduplicate customers by customerId for the admin table (search returns one row per board)
+  const uniqueCustomers = customers
+    ? Array.from(new Map(customers.map((c) => [c.customerId, c])).values())
+    : [];
+
   return (
     <div className="p-4 space-y-4">
       <div className="flex gap-2">
@@ -92,39 +99,24 @@ export default function CustomersPage() {
                 <th className="px-4 py-3 text-left">{GEO.customerName}</th>
                 <th className="px-4 py-3 text-left">{GEO.tin}</th>
                 <th className="px-4 py-3 text-center">Score</th>
+                <th className="px-4 py-3 text-center">{GEO.boards}</th>
                 <th className="px-4 py-3 text-center">{GEO.active}</th>
                 <th className="px-4 py-3 text-center"></th>
               </tr>
             </thead>
             <tbody>
-              {customers?.map((c) => (
-                <tr key={c.customerId} className="border-t">
-                  <td className="px-4 py-3">{c.name}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{c.tin}</td>
-                  <td className="px-4 py-3 text-center">{c.frequencyScore}</td>
-                  <td className="px-4 py-3 text-center">
-                    <Button
-                      variant={c.active ? 'outline' : 'destructive'}
-                      size="sm"
-                      onClick={() => toggleActive.mutate({ id: c.customerId, active: !c.active })}
-                    >
-                      {c.active ? GEO.active : GEO.inactive}
-                    </Button>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        if (confirm(`${c.name} - ${GEO.delete}?`)) {
-                          deleteCustomer.mutate(c.customerId);
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </td>
-                </tr>
+              {uniqueCustomers.map((c) => (
+                <CustomerRow
+                  key={c.customerId}
+                  customer={c}
+                  onToggleActive={() => toggleActive.mutate({ id: c.customerId, active: !c.active })}
+                  onDelete={() => {
+                    if (confirm(`${c.name} - ${GEO.delete}?`)) {
+                      deleteCustomer.mutate(c.customerId);
+                    }
+                  }}
+                  onManageBoards={() => setBoardsCustomer(c)}
+                />
               ))}
             </tbody>
           </table>
@@ -156,7 +148,138 @@ export default function CustomersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {boardsCustomer && (
+        <BoardsDialog
+          customer={boardsCustomer}
+          onClose={() => setBoardsCustomer(null)}
+        />
+      )}
     </div>
   );
 }
 
+function CustomerRow({
+  customer,
+  onToggleActive,
+  onDelete,
+  onManageBoards,
+}: {
+  customer: Customer;
+  onToggleActive: () => void;
+  onDelete: () => void;
+  onManageBoards: () => void;
+}) {
+  const { data: boards } = useCustomerBoards(customer.customerId);
+
+  return (
+    <tr className="border-t">
+      <td className="px-4 py-3">{customer.name}</td>
+      <td className="px-4 py-3 text-muted-foreground">{customer.tin}</td>
+      <td className="px-4 py-3 text-center">{customer.frequencyScore}</td>
+      <td className="px-4 py-3 text-center">
+        <button
+          onClick={onManageBoards}
+          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+        >
+          <Badge variant="secondary" className="text-[10px]">
+            {boards?.length ?? 0}
+          </Badge>
+          <span>{GEO.boards}</span>
+        </button>
+      </td>
+      <td className="px-4 py-3 text-center">
+        <Button
+          variant={customer.active ? 'outline' : 'destructive'}
+          size="sm"
+          onClick={onToggleActive}
+        >
+          {customer.active ? GEO.active : GEO.inactive}
+        </Button>
+      </td>
+      <td className="px-4 py-3 text-center">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onDelete}
+        >
+          <Trash2 className="h-4 w-4 text-destructive" />
+        </Button>
+      </td>
+    </tr>
+  );
+}
+
+function BoardsDialog({ customer, onClose }: { customer: Customer; onClose: () => void }) {
+  const [newBoard, setNewBoard] = useState('');
+  const { data: boards, isLoading } = useCustomerBoards(customer.customerId);
+  const addBoard = useAddBoard(customer.customerId);
+  const removeBoard = useRemoveBoard(customer.customerId);
+
+  const handleAdd = async () => {
+    const trimmed = newBoard.trim();
+    if (!trimmed) return;
+    try {
+      await addBoard.mutateAsync(trimmed);
+      setNewBoard('');
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleRemove = async (board: string) => {
+    try {
+      await removeBoard.mutateAsync(board);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{GEO.boards} — {customer.name}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          {isLoading ? (
+            <Skeleton className="h-8 w-full" />
+          ) : boards && boards.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {boards.map((board) => (
+                <Badge key={board} variant="secondary" className="text-xs flex items-center gap-1 pr-1">
+                  {board}
+                  <button
+                    onClick={() => handleRemove(board)}
+                    className="ml-1 hover:text-destructive transition-colors"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">{GEO.noBoard}</p>
+          )}
+
+          <div className="flex gap-2">
+            <Input
+              placeholder={GEO.addBoard}
+              value={newBoard}
+              onChange={(e) => setNewBoard(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+            />
+            <Button onClick={handleAdd} disabled={!newBoard.trim() || addBoard.isPending}>
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{GEO.cancel}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { Order, SelectedCustomer } from '@/types';
+import type { Order, OrderItem, SelectedCustomer } from '@/types';
 
 export function useOrders(date?: string, managerId?: string) {
   return useQuery({
@@ -34,11 +34,23 @@ export function useCreateOrder() {
           customerName: i.customerName,
           customerId: i.customerId,
           comment: i.comment,
+          board: i.board ?? null,
         })),
         sendTelegram: data.sendTelegram,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+}
+
+export function useUpdateOrderItemBoard() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orderId, itemId, board }: { orderId: string; itemId: string; board: string | null }) =>
+      api.patch<OrderItem>(`/api/v1/orders/${orderId}/items/${itemId}`, { board }),
+    onSuccess: (_, { orderId }) => {
+      queryClient.invalidateQueries({ queryKey: ['order', orderId] });
     },
   });
 }

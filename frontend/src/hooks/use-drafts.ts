@@ -35,6 +35,7 @@ export function useCreateDraft() {
           customerName: i.customerName,
           customerId: i.customerId,
           comment: i.comment,
+          board: i.board ?? null,
         })),
       }),
     onSuccess: () => {
@@ -53,6 +54,7 @@ export function useUpdateDraft() {
           customerName: i.customerName,
           customerId: i.customerId,
           comment: i.comment,
+          board: i.board ?? null,
         })),
       }),
     onSuccess: () => {

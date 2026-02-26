@@ -58,7 +58,7 @@ public class CustomerService {
 
         CustomerDto customer = new CustomerDto(
                 id, sanitize(request.name()), sanitize(request.tin()),
-                0, addedBy, true, now, now);
+                0, addedBy, true, now, now, null);
 
         store.putCustomer(customer);
 
@@ -86,7 +86,8 @@ public class CustomerService {
                 existing.addedBy(),
                 request.active() != null ? request.active() : existing.active(),
                 existing.createdAt(),
-                now);
+                now,
+                existing.board());
 
         store.putCustomer(updated);
 
@@ -106,6 +107,44 @@ public class CustomerService {
 
     public void delete(String id) {
         update(id, new UpdateCustomerRequest(null, false));
+    }
+
+    // --- Board management ---
+
+    public List<String> getBoards(String customerId) {
+        getById(customerId);
+        return store.getBoards(customerId);
+    }
+
+    public void addBoard(String customerId, String board, String addedBy) {
+        String sanitized = sanitize(board);
+        if (sanitized == null || sanitized.isBlank()) {
+            throw new BadRequestException("Board name cannot be blank");
+        }
+        CustomerDto customer = store.getCustomer(customerId);
+        if (customer == null || !customer.active()) {
+            throw new NotFoundException("Customer not found: " + customerId);
+        }
+        if (store.getBoards(customerId).contains(sanitized)) return;
+
+        store.addBoard(customerId, sanitized);
+
+        if (sheetsClient != null) {
+            String now = Instant.now().toString();
+            sheetsClient.appendRow("Customer_Boards", List.of(customerId, sanitized, now, addedBy));
+        }
+
+        log.info("Board added: {} for customer {}", sanitized, customerId);
+    }
+
+    public void removeBoard(String customerId, String board) {
+        String sanitized = sanitize(board);
+        boolean removed = store.removeBoard(customerId, sanitized);
+        if (!removed) {
+            throw new NotFoundException("Board not found: " + sanitized);
+        }
+        log.info("Board removed: {} for customer {}", sanitized, customerId);
+        // Sheets row deletion is deferred to the next periodic refresh
     }
 
     // --- My Customers ---

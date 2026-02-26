@@ -20,7 +20,7 @@ interface SearchPanelProps {
   myCustomerIds: Set<string>;
   onToggleCustomer: (customer: Customer) => void;
   onToggleMyCustomer: (customer: Customer) => void;
-  onCommentChange: (customerId: string, comment: string) => void;
+  onCommentChange: (customerId: string, board: string | undefined, comment: string) => void;
 }
 
 export function SearchPanel({
@@ -39,7 +39,9 @@ export function SearchPanel({
   const parentRef = useRef<HTMLDivElement>(null);
 
   const selectedMap = new Map(
-    selectedItems.filter((i) => i.customerId).map((i) => [i.customerId!, i])
+    selectedItems
+      .filter((i) => i.customerId)
+      .map((i) => [`${i.customerId}|${i.board ?? ''}`, i])
   );
 
   const virtualizer = useVirtualizer({
@@ -110,10 +112,11 @@ export function SearchPanel({
           >
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const customer = customers[virtualRow.index];
-              const selected = selectedMap.get(customer.customerId);
+              const key = `${customer.customerId}|${customer.board ?? ''}`;
+              const selected = selectedMap.get(key);
               return (
                 <div
-                  key={customer.customerId}
+                  key={key}
                   style={{
                     position: 'absolute',
                     top: 0,
@@ -130,7 +133,7 @@ export function SearchPanel({
                     comment={selected?.comment ?? ''}
                     onToggle={() => onToggleCustomer(customer)}
                     onToggleMy={() => onToggleMyCustomer(customer)}
-                    onCommentChange={(comment) => onCommentChange(customer.customerId, comment)}
+                    onCommentChange={(comment) => onCommentChange(customer.customerId, customer.board, comment)}
                   />
                 </div>
               );

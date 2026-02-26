@@ -28,6 +28,9 @@ public class InMemoryStore {
     private final CopyOnWriteArrayList<MyCustomerDto> myCustomers = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<SyncStateDto> syncStates = new CopyOnWriteArrayList<>();
 
+    // Board assignments: customerId -> list of boards
+    private final ConcurrentHashMap<String, CopyOnWriteArrayList<String>> customerBoards = new ConcurrentHashMap<>();
+
     // Secondary indexes
     private final ConcurrentHashMap<String, String> usersByUsername = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, CustomerDto> customersByTin = new ConcurrentHashMap<>();
@@ -49,7 +52,7 @@ public class InMemoryStore {
                     str(row, 0), str(row, 1), str(row, 2),
                     intVal(row, 3), str(row, 4),
                     "TRUE".equalsIgnoreCase(str(row, 5)),
-                    str(row, 6), str(row, 7));
+                    str(row, 6), str(row, 7), null);
             customers.put(c.customerId(), c);
             if (c.tin() != null && !c.tin().isBlank()) {
                 customersByTin.put(c.tin(), c);
@@ -92,9 +95,11 @@ public class InMemoryStore {
         orderItems.clear();
         for (List<Object> row : rows) {
             if (row.isEmpty()) continue;
+            String boardVal = str(row, 6);
             OrderItemDto item = new OrderItemDto(
                     str(row, 0), str(row, 1), str(row, 2),
-                    str(row, 3), str(row, 4), str(row, 5));
+                    str(row, 3), str(row, 4), str(row, 5),
+                    boardVal.isBlank() ? null : boardVal);
             orderItems.put(item.itemId(), item);
         }
         log.info("Loaded {} order items into memory", orderItems.size());
@@ -146,6 +151,18 @@ public class InMemoryStore {
         log.info("Loaded {} sync states into memory (skippedInvalid={})", syncStates.size(), skippedInvalid);
     }
 
+    public void loadCustomerBoards(List<List<Object>> rows) {
+        customerBoards.clear();
+        for (List<Object> row : rows) {
+            if (row.isEmpty()) continue;
+            String customerId = str(row, 0);
+            String board = str(row, 1);
+            if (customerId.isBlank() || board.isBlank()) continue;
+            customerBoards.computeIfAbsent(customerId, k -> new CopyOnWriteArrayList<>()).add(board);
+        }
+        log.info("Loaded customer boards for {} customers", customerBoards.size());
+    }
+
     // --- Customer operations ---
 
     public List<CustomerDto> searchCustomers(String query, String managerId, String tab, int page, int size) {
@@ -173,10 +190,25 @@ public class InMemoryStore {
                 })
                 .collect(Collectors.toList());
 
+        // Expand each customer by their boards (one row per board; one row with null board if no boards)
+        List<CustomerDto> expanded = new ArrayList<>();
+        for (CustomerDto c : filtered) {
+            CopyOnWriteArrayList<String> boards = customerBoards.get(c.customerId());
+            if (boards == null || boards.isEmpty()) {
+                expanded.add(new CustomerDto(c.customerId(), c.name(), c.tin(),
+                        c.frequencyScore(), c.addedBy(), c.active(), c.createdAt(), c.updatedAt(), null));
+            } else {
+                for (String b : boards) {
+                    expanded.add(new CustomerDto(c.customerId(), c.name(), c.tin(),
+                            c.frequencyScore(), c.addedBy(), c.active(), c.createdAt(), c.updatedAt(), b));
+                }
+            }
+        }
+
         int start = page * size;
-        if (start >= filtered.size()) return List.of();
-        int end = Math.min(start + size, filtered.size());
-        return filtered.subList(start, end);
+        if (start >= expanded.size()) return List.of();
+        int end = Math.min(start + size, expanded.size());
+        return expanded.subList(start, end);
     }
 
     public List<CustomerDto> getFrequentCustomers(int limit) {
@@ -200,6 +232,23 @@ public class InMemoryStore {
         if (customer.tin() != null && !customer.tin().isBlank()) {
             customersByTin.put(customer.tin(), customer);
         }
+    }
+
+    // --- Board operations ---
+
+    public List<String> getBoards(String customerId) {
+        CopyOnWriteArrayList<String> boards = customerBoards.get(customerId);
+        return boards != null ? List.copyOf(boards) : List.of();
+    }
+
+    public void addBoard(String customerId, String board) {
+        customerBoards.computeIfAbsent(customerId, k -> new CopyOnWriteArrayList<>()).add(board);
+    }
+
+    public boolean removeBoard(String customerId, String board) {
+        CopyOnWriteArrayList<String> boards = customerBoards.get(customerId);
+        if (boards == null) return false;
+        return boards.remove(board);
     }
 
     // --- User operations ---
@@ -260,10 +309,22 @@ public class InMemoryStore {
         orderItems.put(item.itemId(), item);
     }
 
+    public OrderItemDto getOrderItem(String itemId) {
+        return orderItems.get(itemId);
+    }
+
     public List<OrderItemDto> getOrderItems(String orderId) {
         return orderItems.values().stream()
                 .filter(i -> orderId.equals(i.orderId()))
                 .collect(Collectors.toList());
+    }
+
+    public void updateOrderItemBoard(String itemId, String board) {
+        OrderItemDto existing = orderItems.get(itemId);
+        if (existing == null) return;
+        orderItems.put(itemId, new OrderItemDto(
+                existing.itemId(), existing.orderId(), existing.customerName(),
+                existing.customerId(), existing.comment(), existing.createdAt(), board));
     }
 
     // --- Drafts ---
@@ -364,7 +425,7 @@ public class InMemoryStore {
             CustomerDto updated = new CustomerDto(
                     existing.customerId(), existing.name(), existing.tin(),
                     existing.frequencyScore() + 1, existing.addedBy(),
-                    existing.active(), existing.createdAt(), existing.updatedAt());
+                    existing.active(), existing.createdAt(), existing.updatedAt(), existing.board());
             putCustomer(updated);
         }
     }

@@ -77,6 +77,12 @@ export const GEO = {
   customersFound: 'ნაპოვნი',
   customersAdded: 'დამატებული',
 
+  // Boards
+  board: 'ბორტი',
+  addBoard: 'ბორტის დამატება',
+  noBoard: 'ბორტი არ არის',
+  boards: 'ბორტები',
+
   // General
   loading: 'იტვირთება...',
   error: 'შეცდომა',

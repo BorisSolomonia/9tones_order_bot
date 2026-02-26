@@ -14,6 +14,10 @@ import { Badge } from '@/components/ui/badge';
 import { X, ArrowLeft } from 'lucide-react';
 import type { Customer, SelectedCustomer, MyCustomer } from '@/types';
 
+function compositeKey(customerId: string | undefined, board: string | undefined) {
+  return `${customerId ?? ''}|${board ?? ''}`;
+}
+
 export default function OrdersPage() {
   const [selectedItems, setSelectedItems] = useState<SelectedCustomer[]>([]);
   const [tab, setTab] = useState<'all' | 'my'>('my');
@@ -46,6 +50,7 @@ export default function OrdersPage() {
             customerName: i.customerName,
             customerId: i.customerId,
             comment: i.comment || '',
+            board: i.board ?? undefined,
           })));
         }
       } catch { /* ignore */ }
@@ -55,24 +60,31 @@ export default function OrdersPage() {
 
   const toggleCustomer = useCallback((customer: Customer) => {
     setSelectedItems((prev) => {
-      const exists = prev.find((i) => i.customerId === customer.customerId);
+      const exists = prev.find(
+        (i) => i.customerId === customer.customerId && (i.board ?? '') === (customer.board ?? '')
+      );
       if (exists) {
-        return prev.filter((i) => i.customerId !== customer.customerId);
+        return prev.filter(
+          (i) => !(i.customerId === customer.customerId && (i.board ?? '') === (customer.board ?? ''))
+        );
       }
-      return [...prev, { customerName: customer.name, customerId: customer.customerId, comment: '' }];
+      return [...prev, {
+        customerName: customer.name,
+        customerId: customer.customerId,
+        comment: '',
+        board: customer.board,
+      }];
     });
   }, []);
 
-  const updateCommentByCustomerId = useCallback((customerId: string, comment: string) => {
-    setSelectedItems((prev) => {
-      const exists = prev.find((i) => i.customerId === customerId);
-      if (exists) {
-        return prev.map((item) =>
-          item.customerId === customerId ? { ...item, comment } : item
-        );
-      }
-      return prev;
-    });
+  const updateComment = useCallback((customerId: string, board: string | undefined, comment: string) => {
+    setSelectedItems((prev) =>
+      prev.map((item) =>
+        item.customerId === customerId && (item.board ?? '') === (board ?? '')
+          ? { ...item, comment }
+          : item
+      )
+    );
   }, []);
 
   const toggleMyCustomer = useCallback(async (customer: Customer) => {
@@ -99,8 +111,12 @@ export default function OrdersPage() {
     }
   }, [myCustomerIds, queryClient]);
 
-  const removeItem = useCallback((customerId: string) => {
-    setSelectedItems((prev) => prev.filter((i) => i.customerId !== customerId));
+  const removeItem = useCallback((customerId: string, board: string | undefined) => {
+    setSelectedItems((prev) =>
+      prev.filter(
+        (i) => !(i.customerId === customerId && (i.board ?? '') === (board ?? ''))
+      )
+    );
   }, []);
 
   const handleSend = async () => {
@@ -136,6 +152,7 @@ export default function OrdersPage() {
           customerName: i.customerName,
           customerId: i.customerId,
           comment: i.comment,
+          board: i.board ?? undefined,
         }))
       );
       setSuggestDismissed(true);
@@ -181,11 +198,14 @@ export default function OrdersPage() {
           <div className="flex flex-col gap-0.5">
             {selectedItems.map((item) => (
               <div
-                key={item.customerId}
+                key={compositeKey(item.customerId, item.board)}
                 className="flex items-center justify-between gap-1 py-0.5"
               >
                 <span className="text-[10px] text-muted-foreground truncate flex-1">
                   {item.customerName}
+                  {item.board && (
+                    <span className="ml-1 text-[9px] text-primary/70">/ {item.board}</span>
+                  )}
                   {item.comment && (
                     <span className="ml-1 text-[9px] opacity-60">— {item.comment}</span>
                   )}
@@ -193,7 +213,7 @@ export default function OrdersPage() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    removeItem(item.customerId!);
+                    removeItem(item.customerId!, item.board);
                   }}
                   className="shrink-0 p-0.5 hover:text-destructive"
                 >
@@ -218,7 +238,7 @@ export default function OrdersPage() {
           myCustomerIds={myCustomerIds}
           onToggleCustomer={toggleCustomer}
           onToggleMyCustomer={toggleMyCustomer}
-          onCommentChange={updateCommentByCustomerId}
+          onCommentChange={updateComment}
         />
       </div>
 
@@ -248,17 +268,20 @@ export default function OrdersPage() {
           <div className="flex-1 overflow-y-auto">
             {selectedItems.map((item) => (
               <div
-                key={item.customerId}
+                key={compositeKey(item.customerId, item.board)}
                 className="flex items-center gap-3 px-4 py-3 border-b"
               >
                 <div className="flex-1 min-w-0">
                   <span className="text-sm">{item.customerName}</span>
+                  {item.board && (
+                    <span className="ml-2 text-xs text-primary/70">{item.board}</span>
+                  )}
                   {item.comment && (
                     <p className="text-xs text-muted-foreground mt-0.5">{item.comment}</p>
                   )}
                 </div>
                 <button
-                  onClick={() => removeItem(item.customerId!)}
+                  onClick={() => removeItem(item.customerId!, item.board)}
                   className="shrink-0 p-2 min-h-[44px] flex items-center"
                 >
                   <X className="h-4 w-4 text-destructive" />

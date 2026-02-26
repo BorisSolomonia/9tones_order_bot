@@ -22,7 +22,7 @@ public class SheetsClient {
     private static final Logger log = LoggerFactory.getLogger(SheetsClient.class);
 
     private static final String[] TAB_NAMES = {
-            "Customers", "Users", "Orders", "Order_Items", "Drafts", "My_Customers", "Sync_State"
+            "Customers", "Users", "Orders", "Order_Items", "Drafts", "My_Customers", "Sync_State", "Customer_Boards"
     };
 
     private final Sheets sheetsService;
@@ -77,6 +77,7 @@ public class SheetsClient {
                     case "Drafts" -> store.loadDrafts(dataRows);
                     case "My_Customers" -> store.loadMyCustomers(dataRows);
                     case "Sync_State" -> store.loadSyncStates(dataRows);
+                    case "Customer_Boards" -> store.loadCustomerBoards(dataRows);
                 }
             }
 

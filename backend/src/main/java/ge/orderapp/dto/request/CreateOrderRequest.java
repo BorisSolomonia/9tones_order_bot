@@ -10,6 +10,7 @@ public record CreateOrderRequest(
     public record OrderItemRequest(
             String customerName,
             String customerId,
-            String comment
+            String comment,
+            String board
     ) {}
 }
