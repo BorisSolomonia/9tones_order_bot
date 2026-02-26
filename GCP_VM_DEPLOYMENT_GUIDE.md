@@ -5,7 +5,7 @@ This guide matches the current deployment architecture in this repository and is
 - LLM agents automating deployments
 - teams deploying similar apps to other GCP VMs
 
-It is intentionally practical and failure-driven.
+It is intentionally practical and failure-driven..
 
 ## 1. Current Architecture (What Actually Runs)
 
