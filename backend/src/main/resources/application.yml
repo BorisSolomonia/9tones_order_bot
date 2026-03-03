@@ -43,14 +43,10 @@ rsge:
   timeout: ${RSGE_TIMEOUT:120}
   connect-timeout-seconds: ${RSGE_CONNECT_TIMEOUT_SECONDS:30}
   chunk-days: ${RSGE_CHUNK_DAYS:3}
-  chunk-parallelism: ${RSGE_CHUNK_PARALLELISM:3}
   soap-namespace: ${RSGE_SOAP_NAMESPACE:http://tempuri.org/}
   date-format: ${RSGE_DATE_FORMAT:yyyy-MM-dd'T'HH:mm:ss}
-  debug: ${RSGE_DEBUG:false}
-  debug-sample-count: ${RSGE_DEBUG_SAMPLE_COUNT:3}
-  debug-response-snippet-length: ${RSGE_DEBUG_RESPONSE_SNIPPET_LENGTH:0}
-  enabled: ${RSGE_ENABLED:false}
-  full-sync-months: ${RSGE_FULL_SYNC_MONTHS:24}
+  enabled: ${RSGE_ENABLED:true}
+  full-sync-months: ${RSGE_FULL_SYNC_MONTHS:2}
 
 # Telegram
 telegram:

@@ -7,6 +7,20 @@
         format json
     }
 
+    handle_path /camora/api/* {
+        reverse_proxy camora-erp-backend:8080 {
+            health_uri /health
+            health_interval 30s
+        }
+    }
+
+    handle_path /camora* {
+        reverse_proxy camora-erp-frontend:3000 {
+            health_uri /health
+            health_interval 30s
+        }
+    }
+
     handle /api/* {
         reverse_proxy backend:8080 {
             health_uri /actuator/health
