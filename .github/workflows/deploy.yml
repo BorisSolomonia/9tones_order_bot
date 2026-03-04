@@ -309,6 +309,13 @@ jobs:
             echo "Stopping current deployment..."
             $COMPOSE_RUNNER -p orderapp -f docker/compose.production.yml down --timeout 30 || true
 
+            for container in orderapp-backend orderapp-frontend; do
+              if $DOCKER inspect "$container" >/dev/null 2>&1; then
+                echo "Removing stale container: $container"
+                $DOCKER rm -f "$container" || true
+              fi
+            done
+
             echo "Starting new deployment..."
             $COMPOSE_RUNNER -p orderapp -f docker/compose.production.yml up -d
 
