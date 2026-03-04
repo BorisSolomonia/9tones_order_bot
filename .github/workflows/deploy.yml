@@ -176,7 +176,7 @@ jobs:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_SSH_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
-          source: "docker/compose.production.yml,docker/Caddyfile.production"
+          source: "docker/compose.production.yml"
           target: ${{ env.DEPLOY_DIR }}
           overwrite: true
 
@@ -299,39 +299,38 @@ jobs:
             chmod 644 docker/secrets/service-account.json
 
             $DOCKER network create web 2>/dev/null || true
-            $DOCKER volume create caddy_data 2>/dev/null || true
 
             export TAG="$DEPLOY_TAG"
             export GCP_PROJECT_ID="${{ env.PROJECT_ID }}"
 
             echo "Pulling images with tag: $DEPLOY_TAG"
-            $COMPOSE_RUNNER -f docker/compose.production.yml pull
+            $COMPOSE_RUNNER -p orderapp -f docker/compose.production.yml pull
 
             echo "Stopping current deployment..."
-            $COMPOSE_RUNNER -f docker/compose.production.yml down --timeout 30 || true
+            $COMPOSE_RUNNER -p orderapp -f docker/compose.production.yml down --timeout 30 || true
 
             echo "Starting new deployment..."
-            $COMPOSE_RUNNER -f docker/compose.production.yml up -d
+            $COMPOSE_RUNNER -p orderapp -f docker/compose.production.yml up -d
 
             echo "Waiting for services..."
-            sleep 30
+            sleep 20
 
-            MAX_RETRIES=30
-            RETRY_COUNT=0
-            until curl -sf http://localhost/health >/dev/null 2>&1; do
-              RETRY_COUNT=$((RETRY_COUNT + 1))
-              if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
-                echo "ERROR: Health check failed after $MAX_RETRIES attempts"
-                $COMPOSE_RUNNER -f docker/compose.production.yml ps
-                $COMPOSE_RUNNER -f docker/compose.production.yml logs --tail=100
-                exit 1
+            for attempt in $(seq 1 24); do
+              backend_status=$($DOCKER inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' orderapp-backend 2>/dev/null || echo missing)
+              frontend_status=$($DOCKER inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' orderapp-frontend 2>/dev/null || echo missing)
+              if [ "$backend_status" = "healthy" ] && [ "$frontend_status" = "healthy" ]; then
+                echo "Deployment healthy"
+                $COMPOSE_RUNNER -p orderapp -f docker/compose.production.yml ps
+                exit 0
               fi
-              echo "Health check attempt $RETRY_COUNT/$MAX_RETRIES..."
+              echo "Health attempt $attempt/24 backend=$backend_status frontend=$frontend_status"
               sleep 5
             done
 
-            echo "=== Deployment successful! ==="
-            $COMPOSE_RUNNER -f docker/compose.production.yml ps
+            echo "ERROR: Order App health checks failed"
+            $COMPOSE_RUNNER -p orderapp -f docker/compose.production.yml ps
+            $COMPOSE_RUNNER -p orderapp -f docker/compose.production.yml logs --tail=150
+            exit 1
 
       - name: Cleanup old images
         uses: appleboy/ssh-action@v1.0.3
