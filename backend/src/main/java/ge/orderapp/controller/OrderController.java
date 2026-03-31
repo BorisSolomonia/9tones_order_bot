@@ -44,6 +44,8 @@ public class OrderController {
     @GetMapping
     public ResponseEntity<List<OrderDto>> list(
             @RequestParam(required = false) String date,
+            @RequestParam(required = false, name = "date_from") String dateFrom,
+            @RequestParam(required = false, name = "date_to") String dateTo,
             @RequestParam(required = false, name = "manager_id") String managerId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
@@ -53,7 +55,7 @@ public class OrderController {
         if ("MANAGER".equals(user.role())) {
             managerId = user.userId();
         }
-        return ResponseEntity.ok(orderService.getOrders(date, managerId, page, size));
+        return ResponseEntity.ok(orderService.getOrders(date, dateFrom, dateTo, managerId, page, size));
     }
 
     @GetMapping("/{id}")

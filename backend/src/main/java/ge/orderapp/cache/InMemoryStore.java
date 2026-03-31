@@ -324,9 +324,9 @@ public class InMemoryStore {
         return orders.get(orderId);
     }
 
-    public List<OrderDto> getOrders(String date, String managerId, int page, int size) {
+    public List<OrderDto> getOrders(String date, String dateFrom, String dateTo, String managerId, int page, int size) {
         List<OrderDto> filtered = orders.values().stream()
-                .filter(o -> date == null || date.isBlank() || date.equals(o.date()))
+                .filter(o -> matchesOrderDate(o, date, dateFrom, dateTo))
                 .filter(o -> managerId == null || managerId.isBlank() || managerId.equals(o.managerId()))
                 .sorted((a, b) -> compareNullSafe(b.createdAt(), a.createdAt()))
                 .collect(Collectors.toList());
@@ -335,6 +335,20 @@ public class InMemoryStore {
         if (start >= filtered.size()) return List.of();
         int end = Math.min(start + size, filtered.size());
         return filtered.subList(start, end);
+    }
+
+    private boolean matchesOrderDate(OrderDto order, String date, String dateFrom, String dateTo) {
+        boolean hasRange = (dateFrom != null && !dateFrom.isBlank()) || (dateTo != null && !dateTo.isBlank());
+        if (hasRange) {
+            if (dateFrom != null && !dateFrom.isBlank() && order.date().compareTo(dateFrom) < 0) {
+                return false;
+            }
+            if (dateTo != null && !dateTo.isBlank() && order.date().compareTo(dateTo) > 0) {
+                return false;
+            }
+            return true;
+        }
+        return date == null || date.isBlank() || date.equals(order.date());
     }
 
     // --- Order Items ---

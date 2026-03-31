@@ -67,6 +67,7 @@ telegram:
 
 # App
 app:
+  time-zone: ${APP_TIME_ZONE:Asia/Tbilisi}
   flush-interval-seconds: ${APP_FLUSH_INTERVAL_SECONDS:5}
   refresh-interval-seconds: ${APP_REFRESH_INTERVAL_SECONDS:300}
   cors:

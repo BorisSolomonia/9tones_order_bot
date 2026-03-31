@@ -10,10 +10,13 @@ import ge.orderapp.repository.SheetsClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -22,9 +25,14 @@ import java.util.UUID;
 public class OrderService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
+    private static final DateTimeFormatter EXPORT_DATE_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+    private static final DateTimeFormatter EXPORT_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     private final InMemoryStore store;
     private final TelegramService telegramService;
+
+    @Value("${app.time-zone:Asia/Tbilisi}")
+    private String appTimeZone;
 
     @Autowired(required = false)
     private SheetsClient sheetsClient;
@@ -37,7 +45,7 @@ public class OrderService {
     public OrderDto createOrder(CreateOrderRequest request, UserDto currentUser) {
         String now = Instant.now().toString();
         String orderId = UUID.randomUUID().toString();
-        String date = LocalDate.now().toString();
+        String date = LocalDate.now(resolveAppZoneId()).toString();
 
         // Create order items
         List<OrderItemDto> items = new ArrayList<>();
@@ -107,8 +115,8 @@ public class OrderService {
         return order;
     }
 
-    public List<OrderDto> getOrders(String date, String managerId, int page, int size) {
-        return store.getOrders(date, managerId, page, size);
+    public List<OrderDto> getOrders(String date, String dateFrom, String dateTo, String managerId, int page, int size) {
+        return store.getOrders(date, dateFrom, dateTo, managerId, page, size);
     }
 
     public OrderDto getOrderById(String id) {
@@ -148,9 +156,9 @@ public class OrderService {
     }
 
     public String exportCsv(String dateFrom, String dateTo, String managerId) {
-        List<OrderDto> allOrders = store.getOrders(null, managerId, 0, Integer.MAX_VALUE);
+        List<OrderDto> allOrders = store.getOrders(null, null, null, managerId, 0, Integer.MAX_VALUE);
         StringBuilder csv = new StringBuilder();
-        csv.append("Order ID,Manager,Date,Status,Customer,Comment,Board\n");
+        csv.append("Order ID,Manager,Order Date,Order Time,Status,Customer,Comment,Board\n");
 
         for (OrderDto order : allOrders) {
             if (dateFrom != null && !dateFrom.isBlank() && order.date().compareTo(dateFrom) < 0) continue;
@@ -160,7 +168,8 @@ public class OrderService {
             for (OrderItemDto item : items) {
                 csv.append(escapeCsv(order.orderId())).append(",");
                 csv.append(escapeCsv(order.managerName())).append(",");
-                csv.append(escapeCsv(order.date())).append(",");
+                csv.append(escapeCsv(formatOrderDisplayDate(order))).append(",");
+                csv.append(escapeCsv(formatOrderDisplayTime(order))).append(",");
                 csv.append(escapeCsv(order.status())).append(",");
                 csv.append(escapeCsv(item.customerName())).append(",");
                 csv.append(escapeCsv(item.comment() != null ? item.comment() : "")).append(",");
@@ -168,6 +177,30 @@ public class OrderService {
             }
         }
         return csv.toString();
+    }
+
+    private String formatOrderDisplayDate(OrderDto order) {
+        try {
+            return EXPORT_DATE_FORMAT.format(Instant.parse(order.createdAt()).atZone(resolveAppZoneId()));
+        } catch (Exception ignored) {
+            return order.date() != null ? order.date() : "";
+        }
+    }
+
+    private String formatOrderDisplayTime(OrderDto order) {
+        try {
+            return EXPORT_TIME_FORMAT.format(Instant.parse(order.createdAt()).atZone(resolveAppZoneId()));
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private ZoneId resolveAppZoneId() {
+        try {
+            return ZoneId.of(appTimeZone);
+        } catch (Exception ignored) {
+            return ZoneId.of("Asia/Tbilisi");
+        }
     }
 
     private String sanitize(String input) {

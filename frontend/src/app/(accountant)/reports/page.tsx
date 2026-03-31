@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { GEO } from '@/lib/geo';
-import { formatDate } from '@/lib/utils';
+import { formatDateTime } from '@/lib/utils';
 import { Download, ChevronDown, ChevronUp, Pencil, Check, X } from 'lucide-react';
 import type { Order, OrderItem, User } from '@/types';
 
@@ -22,7 +22,8 @@ export default function ReportsPage() {
     queryKey: ['orders', dateFrom, dateTo, managerId],
     queryFn: () => {
       const params = new URLSearchParams();
-      if (dateFrom) params.set('date', dateFrom);
+      if (dateFrom) params.set('date_from', dateFrom);
+      if (dateTo) params.set('date_to', dateTo);
       if (managerId) params.set('manager_id', managerId);
       params.set('size', '100');
       return api.get<Order[]>(`/api/v1/orders?${params}`);
@@ -104,7 +105,7 @@ export default function ReportsPage() {
                     className="border-t cursor-pointer hover:bg-muted/30"
                     onClick={() => setExpandedOrderId(expandedOrderId === order.orderId ? null : order.orderId)}
                   >
-                    <td className="px-4 py-3">{formatDate(order.date)}</td>
+                    <td className="px-4 py-3">{formatDateTime(order.createdAt || order.date)}</td>
                     <td className="px-4 py-3">{order.managerName}</td>
                     <td className="px-4 py-3 text-center">{order.itemCount}</td>
                     <td className="px-4 py-3 text-center">
