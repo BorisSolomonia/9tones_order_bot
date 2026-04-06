@@ -119,7 +119,7 @@ public class CustomerService {
     }
 
     public void addBoard(String customerId, String board, String addedBy) {
-        String sanitized = sanitize(board);
+        String sanitized = sanitizeBoard(board);
         if (sanitized == null || sanitized.isBlank()) {
             throw new BadRequestException("Board name cannot be blank");
         }
@@ -191,6 +191,15 @@ public class CustomerService {
         if (input == null) return null;
         // Strip control characters
         return input.replaceAll("[\\x00-\\x1F\\x7F]", "").trim();
+    }
+
+    private String sanitizeBoard(String input) {
+        String sanitized = sanitize(input);
+        if (sanitized == null || sanitized.isBlank()) return sanitized;
+        if (sanitized.startsWith("#")) {
+            throw new BadRequestException("Invalid board value");
+        }
+        return sanitized;
     }
 
     private String normalizeTin(String tin) {

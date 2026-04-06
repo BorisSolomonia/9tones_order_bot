@@ -184,14 +184,20 @@ public class InMemoryStore {
 
     public void loadCustomerBoards(List<List<Object>> rows) {
         customerBoards.clear();
+        int skippedInvalid = 0;
         for (List<Object> row : rows) {
             if (row.isEmpty()) continue;
             String customerId = str(row, 0);
-            String board = str(row, 1);
-            if (customerId.isBlank() || board.isBlank()) continue;
+            String board = normalizeBoardValue(str(row, 1));
+            if (customerId.isBlank() || board == null) {
+                if (!customerId.isBlank() && !str(row, 1).isBlank()) {
+                    skippedInvalid++;
+                }
+                continue;
+            }
             customerBoards.computeIfAbsent(customerId, k -> new CopyOnWriteArrayList<>()).add(board);
         }
-        log.info("Loaded customer boards for {} customers", customerBoards.size());
+        log.info("Loaded customer boards for {} customers (skippedInvalid={})", customerBoards.size(), skippedInvalid);
     }
 
     // --- Customer operations ---
@@ -224,8 +230,8 @@ public class InMemoryStore {
         // Expand each customer by their boards (one row per board; one row with null board if no boards)
         List<CustomerDto> expanded = new ArrayList<>();
         for (CustomerDto c : filtered) {
-            CopyOnWriteArrayList<String> boards = customerBoards.get(c.customerId());
-            if (boards == null || boards.isEmpty()) {
+            List<String> boards = getValidBoards(c.customerId());
+            if (boards.isEmpty()) {
                 expanded.add(new CustomerDto(c.customerId(), c.name(), c.tin(),
                         c.frequencyScore(), c.addedBy(), c.active(), c.createdAt(), c.updatedAt(), null));
             } else {
@@ -271,8 +277,7 @@ public class InMemoryStore {
     // --- Board operations ---
 
     public List<String> getBoards(String customerId) {
-        CopyOnWriteArrayList<String> boards = customerBoards.get(customerId);
-        return boards != null ? List.copyOf(boards) : List.of();
+        return getValidBoards(customerId);
     }
 
     public void addBoard(String customerId, String board) {
@@ -500,10 +505,32 @@ public class InMemoryStore {
         if (item == null) return null;
         if (item.board() != null) return item;
         if (item.customerId() == null || item.customerId().isBlank()) return item;
-        CopyOnWriteArrayList<String> boards = customerBoards.get(item.customerId());
-        if (boards == null || boards.size() != 1) return item;
+        List<String> boards = getValidBoards(item.customerId());
+        if (boards.size() != 1) return item;
         return new OrderItemDto(item.itemId(), item.orderId(), item.customerName(),
                 item.customerId(), item.comment(), item.createdAt(), boards.get(0));
+    }
+
+    private List<String> getValidBoards(String customerId) {
+        CopyOnWriteArrayList<String> boards = customerBoards.get(customerId);
+        if (boards == null || boards.isEmpty()) return List.of();
+        return boards.stream()
+                .map(this::normalizeBoardValue)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+    }
+
+    private String normalizeBoardValue(String board) {
+        if (board == null) return null;
+        String trimmed = board.trim();
+        if (trimmed.isBlank()) return null;
+        if (isSpreadsheetFormulaError(trimmed)) return null;
+        return trimmed;
+    }
+
+    private boolean isSpreadsheetFormulaError(String value) {
+        return value.startsWith("#");
     }
 
     // --- Helpers ---
