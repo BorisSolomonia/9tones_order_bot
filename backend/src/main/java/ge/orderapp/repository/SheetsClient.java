@@ -83,6 +83,12 @@ public class SheetsClient {
 
             long elapsed = System.currentTimeMillis() - start;
             log.info("All tabs loaded in {}ms", elapsed);
+
+            int deletedDuplicates = cleanupDuplicateCustomerBoardRows();
+            if (deletedDuplicates > 0) {
+                log.warn("Removed {} duplicate Customer_Boards rows from Google Sheets; reloading board state", deletedDuplicates);
+                reloadCustomerBoards();
+            }
         } catch (Exception e) {
             log.error("Failed to load tabs from Google Sheets", e);
             throw new RuntimeException("Failed to initialize from Google Sheets", e);
@@ -203,6 +209,20 @@ public class SheetsClient {
         return -1;
     }
 
+    public int removeCustomerBoardRows(String customerId, String board) {
+        try {
+            List<Integer> rowIndexes = findCustomerBoardRowIndexes(customerId, board);
+            if (rowIndexes.isEmpty()) {
+                return 0;
+            }
+            deleteRows("Customer_Boards", rowIndexes);
+            return rowIndexes.size();
+        } catch (Exception e) {
+            log.error("Failed to remove Customer_Boards rows for customerId={}, board={}: {}", customerId, board, e.getMessage());
+            throw new RuntimeException("Failed to remove customer board rows from Google Sheets", e);
+        }
+    }
+
     // --- Health check ---
 
     public boolean isHealthy() {
@@ -243,5 +263,139 @@ public class SheetsClient {
             normalized.add(sanitized);
         }
         return normalized;
+    }
+
+    private void reloadCustomerBoards() throws Exception {
+        List<List<Object>> values = sheetsService.spreadsheets().values()
+                .get(spreadsheetId, "Customer_Boards!A:Z")
+                .setValueRenderOption("UNFORMATTED_VALUE")
+                .execute()
+                .getValues();
+        store.loadCustomerBoards(values != null ? values : List.of());
+    }
+
+    private int cleanupDuplicateCustomerBoardRows() throws Exception {
+        List<List<Object>> rows = sheetsService.spreadsheets().values()
+                .get(spreadsheetId, "Customer_Boards!A:D")
+                .setValueRenderOption("UNFORMATTED_VALUE")
+                .execute()
+                .getValues();
+        if (rows == null || rows.isEmpty()) {
+            return 0;
+        }
+
+        Map<String, Integer> newestRowByKey = new HashMap<>();
+        Map<String, String> newestTimestampByKey = new HashMap<>();
+        List<Integer> rowsToDelete = new ArrayList<>();
+
+        for (int i = 0; i < rows.size(); i++) {
+            List<Object> row = rows.get(i);
+            String customerId = cell(row, 0);
+            String board = normalizeBoard(cell(row, 1));
+            if (customerId.isBlank() || board == null) {
+                continue;
+            }
+
+            String key = customerId + "\u0000" + board;
+            String timestamp = cell(row, 2);
+            Integer existingRow = newestRowByKey.get(key);
+            if (existingRow == null) {
+                newestRowByKey.put(key, i + 1);
+                newestTimestampByKey.put(key, timestamp);
+                continue;
+            }
+
+            String existingTimestamp = newestTimestampByKey.get(key);
+            if (compareIsoTimestamps(timestamp, existingTimestamp) >= 0) {
+                rowsToDelete.add(existingRow);
+                newestRowByKey.put(key, i + 1);
+                newestTimestampByKey.put(key, timestamp);
+            } else {
+                rowsToDelete.add(i + 1);
+            }
+        }
+
+        if (rowsToDelete.isEmpty()) {
+            return 0;
+        }
+
+        deleteRows("Customer_Boards", rowsToDelete);
+        return rowsToDelete.size();
+    }
+
+    private List<Integer> findCustomerBoardRowIndexes(String customerId, String board) throws Exception {
+        List<List<Object>> rows = sheetsService.spreadsheets().values()
+                .get(spreadsheetId, "Customer_Boards!A:B")
+                .setValueRenderOption("UNFORMATTED_VALUE")
+                .execute()
+                .getValues();
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+
+        List<Integer> matches = new ArrayList<>();
+        String normalizedBoard = normalizeBoard(board);
+        for (int i = 0; i < rows.size(); i++) {
+            List<Object> row = rows.get(i);
+            if (customerId.equals(cell(row, 0)) && Objects.equals(normalizedBoard, normalizeBoard(cell(row, 1)))) {
+                matches.add(i + 1);
+            }
+        }
+        return matches;
+    }
+
+    private void deleteRows(String tab, List<Integer> oneBasedRowIndexes) throws Exception {
+        Integer sheetId = getSheetId(tab);
+        List<Request> requests = oneBasedRowIndexes.stream()
+                .sorted(Comparator.reverseOrder())
+                .map(rowIndex -> new Request().setDeleteDimension(new DeleteDimensionRequest()
+                        .setRange(new DimensionRange()
+                                .setSheetId(sheetId)
+                                .setDimension("ROWS")
+                                .setStartIndex(rowIndex - 1)
+                                .setEndIndex(rowIndex))))
+                .toList();
+
+        BatchUpdateSpreadsheetRequest request = new BatchUpdateSpreadsheetRequest().setRequests(requests);
+        sheetsService.spreadsheets().batchUpdate(spreadsheetId, request).execute();
+    }
+
+    private Integer getSheetId(String tab) throws Exception {
+        Spreadsheet spreadsheet = sheetsService.spreadsheets().get(spreadsheetId).execute();
+        if (spreadsheet.getSheets() == null) {
+            throw new IllegalStateException("No sheets found in spreadsheet");
+        }
+        for (Sheet sheet : spreadsheet.getSheets()) {
+            if (sheet.getProperties() != null && tab.equals(sheet.getProperties().getTitle())) {
+                return sheet.getProperties().getSheetId();
+            }
+        }
+        throw new IllegalArgumentException("Sheet not found: " + tab);
+    }
+
+    private String cell(List<Object> row, int index) {
+        if (row == null || index >= row.size() || row.get(index) == null) {
+            return "";
+        }
+        return row.get(index).toString().trim();
+    }
+
+    private String normalizeBoard(String board) {
+        if (board == null) return null;
+        String trimmed = board.trim();
+        if (trimmed.isBlank() || trimmed.startsWith("#")) {
+            return null;
+        }
+        return trimmed;
+    }
+
+    private int compareIsoTimestamps(String a, String b) {
+        if (a == null || a.isBlank()) {
+            return (b == null || b.isBlank()) ? 0 : -1;
+        }
+        if (b == null || b.isBlank()) {
+            return 1;
+        }
+        return a.compareTo(b);
     }
 }

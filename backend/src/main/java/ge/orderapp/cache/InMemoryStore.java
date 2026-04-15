@@ -284,10 +284,17 @@ public class InMemoryStore {
         customerBoards.computeIfAbsent(customerId, k -> new CopyOnWriteArrayList<>()).add(board);
     }
 
-    public boolean removeBoard(String customerId, String board) {
+    public int removeBoard(String customerId, String board) {
         CopyOnWriteArrayList<String> boards = customerBoards.get(customerId);
-        if (boards == null) return false;
-        return boards.remove(board);
+        if (boards == null) return 0;
+        int removed = 0;
+        while (boards.remove(board)) {
+            removed++;
+        }
+        if (boards.isEmpty()) {
+            customerBoards.remove(customerId, boards);
+        }
+        return removed;
     }
 
     // --- User operations ---

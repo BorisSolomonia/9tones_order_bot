@@ -141,12 +141,17 @@ public class CustomerService {
 
     public void removeBoard(String customerId, String board) {
         String sanitized = sanitize(board);
-        boolean removed = store.removeBoard(customerId, sanitized);
-        if (!removed) {
+        int removedFromSheets = 0;
+        if (sheetsClient != null) {
+            removedFromSheets = sheetsClient.removeCustomerBoardRows(customerId, sanitized);
+        }
+
+        int removedFromMemory = store.removeBoard(customerId, sanitized);
+        if (removedFromSheets == 0 && removedFromMemory == 0) {
             throw new NotFoundException("Board not found: " + sanitized);
         }
-        log.info("Board removed: {} for customer {}", sanitized, customerId);
-        // Sheets row deletion is deferred to the next periodic refresh
+        log.info("Board removed: {} for customer {} (memoryRemoved={}, sheetsRemoved={})",
+                sanitized, customerId, removedFromMemory, removedFromSheets);
     }
 
     // --- My Customers ---
