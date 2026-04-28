@@ -429,7 +429,8 @@ public class SheetsClient {
     }
 
     private boolean looksLikeTimestamp(String value) {
-        return value != null && value.matches("^\\d{4}-\\d{2}-\\d{2}([T ].*)?$");
+        return value != null && (value.matches("^\\d{4}-\\d{2}-\\d{2}([T ].*)?$")
+                || value.matches("^\\d{5}(\\.0+)?$"));
     }
 
     private int compareIsoTimestamps(String a, String b) {

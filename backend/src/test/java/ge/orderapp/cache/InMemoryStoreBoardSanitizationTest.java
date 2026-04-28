@@ -51,6 +51,41 @@ class InMemoryStoreBoardSanitizationTest {
     }
 
     @Test
+    void loadsCanonicalCustomerBoardRowsWithAddressInColumnC() {
+        InMemoryStore store = new InMemoryStore(new ObjectMapper());
+        String customerId = "5b5c84f0-d6e3-421b-9c3d-f98c73084203";
+        store.putCustomer(new CustomerDto(customerId, "Customer", "123", 0, "admin", true, "now", "now", null, null));
+
+        store.loadCustomerBoards(List.of(
+                List.of("customerId", "board", "address", "createdAt", "addedBy"),
+                List.of(customerId, "Central", "Address 1", "2026-04-28T10:15:30Z", "admin")
+        ));
+
+        List<CustomerDto> customers = store.searchCustomers("Customer", null, "all", 0, 20);
+
+        assertEquals(1, customers.size());
+        assertEquals("Central", customers.get(0).board());
+        assertEquals("Address 1", customers.get(0).address());
+    }
+
+    @Test
+    void numericSheetsDateSerialIsNotInferredAsAddress() {
+        InMemoryStore store = new InMemoryStore(new ObjectMapper());
+        String customerId = "5b5c84f0-d6e3-421b-9c3d-f98c73084203";
+        store.putCustomer(new CustomerDto(customerId, "Customer", "123", 0, "admin", true, "now", "now", null, null));
+
+        store.loadCustomerBoards(List.of(
+                List.of(customerId, "Central", 46079, "admin")
+        ));
+
+        List<CustomerDto> customers = store.searchCustomers("Customer", null, "all", 0, 20);
+
+        assertEquals(1, customers.size());
+        assertEquals("Central", customers.get(0).board());
+        assertNull(customers.get(0).address());
+    }
+
+    @Test
     void loadsHumanFriendlyCustomerBoardRowsWithNameColumn() {
         InMemoryStore store = new InMemoryStore(new ObjectMapper());
         String customerId = "01d195dd-fcb7-4a71-98c0-88ac8fd6a6d0";

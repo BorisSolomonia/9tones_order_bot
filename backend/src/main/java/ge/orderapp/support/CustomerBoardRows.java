@@ -171,6 +171,7 @@ public final class CustomerBoardRows {
         if (board == null) return false;
         if (isUuidLike(board)) return false;
         if (ISO_TIMESTAMP_PATTERN.matcher(board).matches()) return false;
+        if (isSpreadsheetDateSerial(board)) return false;
         String lower = board.toLowerCase(Locale.ROOT);
         return !"true".equals(lower) && !"false".equals(lower) && !"customerid".equals(normalizeHeader(board));
     }
@@ -180,8 +181,23 @@ public final class CustomerBoardRows {
         if (address == null) return false;
         if (isUuidLike(address)) return false;
         if (ISO_TIMESTAMP_PATTERN.matcher(address).matches()) return false;
+        if (isSpreadsheetDateSerial(address)) return false;
         String lower = address.toLowerCase(Locale.ROOT);
         return !"true".equals(lower) && !"false".equals(lower);
+    }
+
+    private static boolean isSpreadsheetDateSerial(String value) {
+        if (value == null || !value.matches("^\\d+(\\.0+)?$")) {
+            return false;
+        }
+        try {
+            int serial = (int) Double.parseDouble(value);
+            // Google Sheets serial dates near current production data are around 46k.
+            // Keep small numeric addresses like "12" valid while rejecting date cells.
+            return serial >= 30000 && serial <= 80000;
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
     }
 
     private static boolean isCustomerIdHeader(String value) {
