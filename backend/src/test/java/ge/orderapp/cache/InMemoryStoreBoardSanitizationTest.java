@@ -15,7 +15,7 @@ class InMemoryStoreBoardSanitizationTest {
     @Test
     void formulaErrorBoardsAreIgnoredForCustomerListsAndBoardQueries() {
         InMemoryStore store = new InMemoryStore(new ObjectMapper());
-        store.putCustomer(new CustomerDto("c1", "ფუად ხატტაბ", "123", 0, "admin", true, "now", "now", null));
+        store.putCustomer(new CustomerDto("c1", "ფუად ხატტაბ", "123", 0, "admin", true, "now", "now", null, null));
         store.loadCustomerBoards(List.of(
                 List.of("c1", "#N/A (Did not find value 'ფუად ხატტაბ' in VLOOKUP evaluation.)"),
                 List.of("c1", "საბურთალო")
@@ -31,7 +31,7 @@ class InMemoryStoreBoardSanitizationTest {
     void formulaErrorBoardsDoNotAutoFillOrderItems() {
         InMemoryStore store = new InMemoryStore(new ObjectMapper());
         store.loadCustomerBoards(List.of(List.of("c1", "#N/A (Did not find value 'ფუად ხატტაბ' in VLOOKUP evaluation.)")));
-        store.putOrderItem(new OrderItemDto("i1", "o1", "ფუად ხატტაბ", "c1", "", "now", null));
+        store.putOrderItem(new OrderItemDto("i1", "o1", "ფუად ხატტაბ", "c1", "", "now", null, null));
 
         OrderItemDto item = store.getOrderItem("i1");
 
@@ -87,5 +87,23 @@ class InMemoryStoreBoardSanitizationTest {
         ));
 
         assertEquals(List.of("North", "South"), store.getBoards(customerId));
+    }
+
+    @Test
+    void sameBoardWithDifferentAddressesCreatesDistinctCustomerRows() {
+        InMemoryStore store = new InMemoryStore(new ObjectMapper());
+        String customerId = "c1";
+        store.putCustomer(new CustomerDto(customerId, "Customer", "123", 0, "admin", true, "now", "now", null, null));
+
+        store.loadCustomerBoards(List.of(
+                List.of("customerId", "board", "address", "createdAt", "addedBy"),
+                List.of(customerId, "Saburtalo", "y1", "2026-04-28T10:15:30Z", "admin"),
+                List.of(customerId, "Saburtalo", "y2", "2026-04-28T10:16:30Z", "admin")
+        ));
+
+        List<CustomerDto> customers = store.searchCustomers("Customer", null, "all", 0, 20);
+
+        assertEquals(2, customers.size());
+        assertEquals(List.of("y1", "y2"), customers.stream().map(CustomerDto::address).toList());
     }
 }

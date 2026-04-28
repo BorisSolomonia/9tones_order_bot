@@ -29,8 +29,8 @@ public class InMemoryStore {
     private final CopyOnWriteArrayList<MyCustomerDto> myCustomers = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<SyncStateDto> syncStates = new CopyOnWriteArrayList<>();
 
-    // Board assignments: customerId -> list of boards
-    private final ConcurrentHashMap<String, CopyOnWriteArrayList<String>> customerBoards = new ConcurrentHashMap<>();
+    // Location assignments: customerId -> board/address rows
+    private final ConcurrentHashMap<String, CopyOnWriteArrayList<CustomerLocation>> customerLocations = new ConcurrentHashMap<>();
 
     // Secondary indexes
     private final ConcurrentHashMap<String, String> usersByUsername = new ConcurrentHashMap<>();
@@ -57,7 +57,7 @@ public class InMemoryStore {
                     str(row, 0), str(row, 1), str(row, 2),
                     intVal(row, 3), str(row, 4),
                     "TRUE".equalsIgnoreCase(str(row, 5)),
-                    str(row, 6), str(row, 7), null);
+                    str(row, 6), str(row, 7), null, null);
             if (c.customerId() == null || c.customerId().isBlank()) continue;
 
             String tin = normalizeTin(c.tin());
@@ -128,10 +128,12 @@ public class InMemoryStore {
         for (List<Object> row : rows) {
             if (row.isEmpty()) continue;
             String boardVal = str(row, 6);
+            String addressVal = str(row, 7);
             OrderItemDto item = new OrderItemDto(
                     str(row, 0), str(row, 1), str(row, 2),
                     str(row, 3), str(row, 4), str(row, 5),
-                    boardVal.isBlank() ? null : boardVal);
+                    boardVal.isBlank() ? null : boardVal,
+                    addressVal.isBlank() ? null : addressVal);
             orderItems.put(item.itemId(), item);
         }
         log.info("Loaded {} order items into memory", orderItems.size());
@@ -184,7 +186,7 @@ public class InMemoryStore {
     }
 
     public void loadCustomerBoards(List<List<Object>> rows) {
-        customerBoards.clear();
+        customerLocations.clear();
         int skippedInvalid = 0;
         CustomerBoardRows.Header header = CustomerBoardRows.detectHeader(rows);
         for (List<Object> row : rows) {
@@ -192,12 +194,17 @@ public class InMemoryStore {
             CustomerBoardRows.ParsedRow parsed = CustomerBoardRows.parse(row, header);
             if (parsed.headerRow()) continue;
             if (parsed.customerId().isBlank() || parsed.board() == null) {
-                if (parsed.invalidBoard()) skippedInvalid++;
+                if (parsed.invalidBoard() || parsed.invalidAddress()) skippedInvalid++;
                 continue;
             }
-            customerBoards.computeIfAbsent(parsed.customerId(), k -> new CopyOnWriteArrayList<>()).add(parsed.board());
+            if (parsed.invalidAddress()) {
+                skippedInvalid++;
+                continue;
+            }
+            customerLocations.computeIfAbsent(parsed.customerId(), k -> new CopyOnWriteArrayList<>())
+                    .add(new CustomerLocation(parsed.board(), parsed.address()));
         }
-        log.info("Loaded customer boards for {} customers (skippedInvalid={})", customerBoards.size(), skippedInvalid);
+        log.info("Loaded customer locations for {} customers (skippedInvalid={})", customerLocations.size(), skippedInvalid);
     }
 
     // --- Customer operations ---
@@ -227,17 +234,18 @@ public class InMemoryStore {
                 })
                 .collect(Collectors.toList());
 
-        // Expand each customer by their boards (one row per board; one row with null board if no boards)
+        // Expand each customer by their locations.
         List<CustomerDto> expanded = new ArrayList<>();
         for (CustomerDto c : filtered) {
-            List<String> boards = getValidBoards(c.customerId());
-            if (boards.isEmpty()) {
+            List<CustomerLocation> locations = getSelectableLocations(c.customerId());
+            if (locations.isEmpty()) {
                 expanded.add(new CustomerDto(c.customerId(), c.name(), c.tin(),
-                        c.frequencyScore(), c.addedBy(), c.active(), c.createdAt(), c.updatedAt(), null));
+                        c.frequencyScore(), c.addedBy(), c.active(), c.createdAt(), c.updatedAt(), null, null));
             } else {
-                for (String b : boards) {
+                for (CustomerLocation location : locations) {
                     expanded.add(new CustomerDto(c.customerId(), c.name(), c.tin(),
-                            c.frequencyScore(), c.addedBy(), c.active(), c.createdAt(), c.updatedAt(), b));
+                            c.frequencyScore(), c.addedBy(), c.active(), c.createdAt(), c.updatedAt(),
+                            location.board(), location.address()));
                 }
             }
         }
@@ -281,18 +289,50 @@ public class InMemoryStore {
     }
 
     public void addBoard(String customerId, String board) {
-        customerBoards.computeIfAbsent(customerId, k -> new CopyOnWriteArrayList<>()).add(board);
+        addLocation(customerId, board, null);
     }
 
     public int removeBoard(String customerId, String board) {
-        CopyOnWriteArrayList<String> boards = customerBoards.get(customerId);
-        if (boards == null) return 0;
-        int removed = 0;
-        while (boards.remove(board)) {
-            removed++;
+        CopyOnWriteArrayList<CustomerLocation> locations = customerLocations.get(customerId);
+        if (locations == null) return 0;
+        int before = locations.size();
+        locations.removeIf(location -> Objects.equals(location.board(), board));
+        int removed = before - locations.size();
+        if (locations.isEmpty()) {
+            customerLocations.remove(customerId, locations);
         }
-        if (boards.isEmpty()) {
-            customerBoards.remove(customerId, boards);
+        return removed;
+    }
+
+    public List<CustomerLocationDto> getLocations(String customerId) {
+        CopyOnWriteArrayList<CustomerLocation> locations = customerLocations.get(customerId);
+        if (locations == null || locations.isEmpty()) return List.of();
+        return locations.stream()
+                .map(this::normalizeLocation)
+                .filter(Objects::nonNull)
+                .distinct()
+                .map(location -> new CustomerLocationDto(customerId, location.board(), location.address()))
+                .toList();
+    }
+
+    public void addLocation(String customerId, String board, String address) {
+        CustomerLocation location = new CustomerLocation(board, normalizeAddressValue(address));
+        CopyOnWriteArrayList<CustomerLocation> locations =
+                customerLocations.computeIfAbsent(customerId, k -> new CopyOnWriteArrayList<>());
+        if (!locations.contains(location)) {
+            locations.add(location);
+        }
+    }
+
+    public int removeLocation(String customerId, String board, String address) {
+        CopyOnWriteArrayList<CustomerLocation> locations = customerLocations.get(customerId);
+        if (locations == null) return 0;
+        CustomerLocation target = new CustomerLocation(board, normalizeAddressValue(address));
+        int before = locations.size();
+        locations.removeIf(target::equals);
+        int removed = before - locations.size();
+        if (locations.isEmpty()) {
+            customerLocations.remove(customerId, locations);
         }
         return removed;
     }
@@ -385,7 +425,15 @@ public class InMemoryStore {
         if (existing == null) return;
         orderItems.put(itemId, new OrderItemDto(
                 existing.itemId(), existing.orderId(), existing.customerName(),
-                existing.customerId(), existing.comment(), existing.createdAt(), board));
+                existing.customerId(), existing.comment(), existing.createdAt(), board, existing.address()));
+    }
+
+    public void updateOrderItemLocation(String itemId, String board, String address) {
+        OrderItemDto existing = orderItems.get(itemId);
+        if (existing == null) return;
+        orderItems.put(itemId, new OrderItemDto(
+                existing.itemId(), existing.orderId(), existing.customerName(),
+                existing.customerId(), existing.comment(), existing.createdAt(), board, normalizeAddressValue(address)));
     }
 
     // --- Drafts ---
@@ -486,7 +534,7 @@ public class InMemoryStore {
             CustomerDto updated = new CustomerDto(
                     existing.customerId(), existing.name(), existing.tin(),
                     existing.frequencyScore() + 1, existing.addedBy(),
-                    existing.active(), existing.createdAt(), existing.updatedAt(), existing.board());
+                    existing.active(), existing.createdAt(), existing.updatedAt(), existing.board(), existing.address());
             putCustomer(updated);
         }
     }
@@ -512,24 +560,62 @@ public class InMemoryStore {
         if (item == null) return null;
         if (item.board() != null) return item;
         if (item.customerId() == null || item.customerId().isBlank()) return item;
-        List<String> boards = getValidBoards(item.customerId());
-        if (boards.size() != 1) return item;
+        List<CustomerLocation> locations = getSelectableLocations(item.customerId());
+        if (locations.size() != 1) return item;
+        CustomerLocation location = locations.get(0);
         return new OrderItemDto(item.itemId(), item.orderId(), item.customerName(),
-                item.customerId(), item.comment(), item.createdAt(), boards.get(0));
+                item.customerId(), item.comment(), item.createdAt(), location.board(), location.address());
     }
 
     private List<String> getValidBoards(String customerId) {
-        CopyOnWriteArrayList<String> boards = customerBoards.get(customerId);
-        if (boards == null || boards.isEmpty()) return List.of();
-        return boards.stream()
+        CopyOnWriteArrayList<CustomerLocation> locations = customerLocations.get(customerId);
+        if (locations == null || locations.isEmpty()) return List.of();
+        return locations.stream()
+                .map(CustomerLocation::board)
+                .filter(Objects::nonNull)
                 .map(this::normalizeBoardValue)
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
     }
 
+    private List<CustomerLocation> getSelectableLocations(String customerId) {
+        CopyOnWriteArrayList<CustomerLocation> locations = customerLocations.get(customerId);
+        if (locations == null || locations.isEmpty()) return List.of();
+
+        Map<String, List<CustomerLocation>> byBoard = locations.stream()
+                .map(this::normalizeLocation)
+                .filter(Objects::nonNull)
+                .collect(Collectors.groupingBy(CustomerLocation::board, LinkedHashMap::new, Collectors.toList()));
+
+        List<CustomerLocation> selectable = new ArrayList<>();
+        for (List<CustomerLocation> boardLocations : byBoard.values()) {
+            List<CustomerLocation> addressed = boardLocations.stream()
+                    .filter(location -> location.address() != null)
+                    .distinct()
+                    .toList();
+            if (!addressed.isEmpty()) {
+                selectable.addAll(addressed);
+            } else {
+                selectable.add(boardLocations.get(0));
+            }
+        }
+        return selectable.stream().distinct().toList();
+    }
+
+    private CustomerLocation normalizeLocation(CustomerLocation location) {
+        if (location == null) return null;
+        String board = normalizeBoardValue(location.board());
+        if (board == null) return null;
+        return new CustomerLocation(board, normalizeAddressValue(location.address()));
+    }
+
     private String normalizeBoardValue(String board) {
         return CustomerBoardRows.normalizeBoard(board);
+    }
+
+    private String normalizeAddressValue(String address) {
+        return CustomerBoardRows.normalizeAddress(address);
     }
 
     // --- Helpers ---
@@ -585,4 +671,6 @@ public class InMemoryStore {
         return state.syncId() != null && !state.syncId().isBlank()
                 && state.status() != null && !state.status().isBlank();
     }
+
+    private record CustomerLocation(String board, String address) {}
 }

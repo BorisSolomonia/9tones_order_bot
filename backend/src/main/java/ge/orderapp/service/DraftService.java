@@ -56,7 +56,8 @@ public class DraftService {
         String draftId = UUID.randomUUID().toString();
 
         List<DraftItemDto> items = request.items().stream()
-                .map(i -> new DraftItemDto(sanitize(i.customerName()), i.customerId(), sanitize(i.comment()), sanitize(i.board())))
+                .map(i -> new DraftItemDto(sanitize(i.customerName()), i.customerId(), sanitize(i.comment()),
+                        sanitize(i.board()), sanitize(i.address())))
                 .toList();
 
         DraftDto draft = new DraftDto(draftId, managerId, sanitize(request.name()), items, now, now);
@@ -80,7 +81,8 @@ public class DraftService {
 
         String now = Instant.now().toString();
         List<DraftItemDto> items = request.items().stream()
-                .map(i -> new DraftItemDto(sanitize(i.customerName()), i.customerId(), sanitize(i.comment()), sanitize(i.board())))
+                .map(i -> new DraftItemDto(sanitize(i.customerName()), i.customerId(), sanitize(i.comment()),
+                        sanitize(i.board()), sanitize(i.address())))
                 .toList();
 
         DraftDto updated = new DraftDto(draftId, managerId, sanitize(request.name()), items, existing.createdAt(), now);

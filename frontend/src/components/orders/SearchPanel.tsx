@@ -20,7 +20,8 @@ interface SearchPanelProps {
   myCustomerIds: Set<string>;
   onToggleCustomer: (customer: Customer) => void;
   onToggleMyCustomer: (customer: Customer) => void;
-  onCommentChange: (customerId: string, board: string | undefined, comment: string) => void;
+  onManageLocations: (customer: Customer) => void;
+  onCommentChange: (customerId: string, board: string | undefined, address: string | undefined, comment: string) => void;
 }
 
 export function SearchPanel({
@@ -34,6 +35,7 @@ export function SearchPanel({
   myCustomerIds,
   onToggleCustomer,
   onToggleMyCustomer,
+  onManageLocations,
   onCommentChange,
 }: SearchPanelProps) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -41,7 +43,7 @@ export function SearchPanel({
   const selectedMap = new Map(
     selectedItems
       .filter((i) => i.customerId)
-      .map((i) => [`${i.customerId}|${i.board ?? ''}`, i])
+      .map((i) => [`${i.customerId}|${i.board ?? ''}|${i.address ?? ''}`, i])
   );
 
   const virtualizer = useVirtualizer({
@@ -112,7 +114,7 @@ export function SearchPanel({
           >
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const customer = customers[virtualRow.index];
-              const key = `${customer.customerId}|${customer.board ?? ''}`;
+              const key = `${customer.customerId}|${customer.board ?? ''}|${customer.address ?? ''}`;
               const selected = selectedMap.get(key);
               return (
                 <div
@@ -133,7 +135,8 @@ export function SearchPanel({
                     comment={selected?.comment ?? ''}
                     onToggle={() => onToggleCustomer(customer)}
                     onToggleMy={() => onToggleMyCustomer(customer)}
-                    onCommentChange={(comment) => onCommentChange(customer.customerId, customer.board, comment)}
+                    onManageLocations={() => onManageLocations(customer)}
+                    onCommentChange={(comment) => onCommentChange(customer.customerId, customer.board, customer.address, comment)}
                   />
                 </div>
               );

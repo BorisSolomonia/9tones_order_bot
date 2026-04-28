@@ -9,5 +9,6 @@ public record CustomerDto(
         boolean active,
         String createdAt,
         String updatedAt,
-        String board
+        String board,
+        String address
 ) {}

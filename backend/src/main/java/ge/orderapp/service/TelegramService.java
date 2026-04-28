@@ -68,6 +68,12 @@ public class TelegramService {
         for (int i = 0; i < items.size(); i++) {
             OrderItemDto item = items.get(i);
             sb.append(i + 1).append(". ").append(escapeHtml(item.customerName()));
+            if (item.board() != null && !item.board().isBlank()) {
+                sb.append(" / ").append(escapeHtml(item.board()));
+            }
+            if (item.address() != null && !item.address().isBlank()) {
+                sb.append(" / ").append(escapeHtml(item.address()));
+            }
             if (item.comment() != null && !item.comment().isBlank()) {
                 sb.append(" - ").append(escapeHtml(item.comment()));
             }

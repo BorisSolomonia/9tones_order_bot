@@ -12,6 +12,7 @@ public record CreateDraftRequest(
             String customerName,
             String customerId,
             String comment,
-            String board
+            String board,
+            String address
     ) {}
 }

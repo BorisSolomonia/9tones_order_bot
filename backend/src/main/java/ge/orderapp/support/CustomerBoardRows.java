@@ -38,24 +38,31 @@ public final class CustomerBoardRows {
 
         String customerId;
         String rawBoard;
+        String rawAddress;
         if (header != null && header.present() && header.customerIdIndex() >= 0 && header.boardIndex() >= 0) {
             customerId = cell(row, header.customerIdIndex());
             rawBoard = cell(row, header.boardIndex());
+            rawAddress = header.addressIndex() >= 0 ? cell(row, header.addressIndex()) : "";
         } else {
             int uuidIndex = findUuidIndex(row);
             if (uuidIndex >= 0) {
                 customerId = cell(row, uuidIndex);
-                rawBoard = cell(row, inferBoardIndex(row, uuidIndex));
+                int boardIndex = inferBoardIndex(row, uuidIndex);
+                rawBoard = cell(row, boardIndex);
+                rawAddress = inferAddress(row, uuidIndex, boardIndex);
             } else {
                 customerId = cell(row, 0);
                 rawBoard = cell(row, 1);
+                rawAddress = inferCanonicalAddress(row);
             }
         }
 
         String board = normalizeBoard(rawBoard);
+        String address = normalizeAddress(rawAddress);
         boolean hasCustomerId = !customerId.isBlank();
         boolean invalidBoard = hasCustomerId && !rawBoard.isBlank() && board == null;
-        return new ParsedRow(customerId, board, false, hasCustomerId, invalidBoard);
+        boolean invalidAddress = hasCustomerId && !rawAddress.isBlank() && address == null;
+        return new ParsedRow(customerId, board, address, false, hasCustomerId, invalidBoard, invalidAddress);
     }
 
     public static String normalizeBoard(String board) {
@@ -71,9 +78,20 @@ public final class CustomerBoardRows {
         return value != null && UUID_PATTERN.matcher(value.trim()).matches();
     }
 
+    public static String normalizeAddress(String address) {
+        if (address == null) return null;
+        String trimmed = address.trim();
+        if (trimmed.isBlank()) return null;
+        if (trimmed.startsWith("#") || trimmed.startsWith("=")) {
+            return null;
+        }
+        return trimmed;
+    }
+
     private static Header detectHeaderInRow(List<Object> row) {
         int customerIdIndex = -1;
         int boardIndex = -1;
+        int addressIndex = -1;
         if (row == null) {
             return Header.none();
         }
@@ -83,10 +101,12 @@ public final class CustomerBoardRows {
                 customerIdIndex = i;
             } else if (isBoardHeader(normalized)) {
                 boardIndex = i;
+            } else if (isAddressHeader(normalized)) {
+                addressIndex = i;
             }
         }
         if (customerIdIndex >= 0 && boardIndex >= 0) {
-            return new Header(customerIdIndex, boardIndex, true);
+            return new Header(customerIdIndex, boardIndex, addressIndex, true);
         }
         return Header.none();
     }
@@ -124,6 +144,28 @@ public final class CustomerBoardRows {
         return -1;
     }
 
+    private static String inferCanonicalAddress(List<Object> row) {
+        String candidate = cell(row, 2);
+        return isAddressCandidate(candidate) ? candidate : "";
+    }
+
+    private static String inferAddress(List<Object> row, int customerIdIndex, int boardIndex) {
+        if (customerIdIndex == 0) {
+            String candidate = cell(row, 2);
+            return isAddressCandidate(candidate) ? candidate : "";
+        }
+        if (customerIdIndex == 3 && boardIndex == 1) {
+            String candidate = cell(row, 2);
+            return isAddressCandidate(candidate) ? candidate : "";
+        }
+        for (int i = 0; i < row.size(); i++) {
+            if (i == customerIdIndex || i == boardIndex) continue;
+            String candidate = cell(row, i);
+            if (isAddressCandidate(candidate)) return candidate;
+        }
+        return "";
+    }
+
     private static boolean isBoardCandidate(String value) {
         String board = normalizeBoard(value);
         if (board == null) return false;
@@ -133,12 +175,25 @@ public final class CustomerBoardRows {
         return !"true".equals(lower) && !"false".equals(lower) && !"customerid".equals(normalizeHeader(board));
     }
 
+    private static boolean isAddressCandidate(String value) {
+        String address = normalizeAddress(value);
+        if (address == null) return false;
+        if (isUuidLike(address)) return false;
+        if (ISO_TIMESTAMP_PATTERN.matcher(address).matches()) return false;
+        String lower = address.toLowerCase(Locale.ROOT);
+        return !"true".equals(lower) && !"false".equals(lower);
+    }
+
     private static boolean isCustomerIdHeader(String value) {
         return "customerid".equals(value) || "customeruuid".equals(value);
     }
 
     private static boolean isBoardHeader(String value) {
         return "board".equals(value) || "boards".equals(value);
+    }
+
+    private static boolean isAddressHeader(String value) {
+        return "address".equals(value) || "addresses".equals(value) || "adress".equals(value) || "adresses".equals(value);
     }
 
     private static String normalizeHeader(String value) {
@@ -157,20 +212,20 @@ public final class CustomerBoardRows {
         return value == null ? "" : value.toString().trim();
     }
 
-    public record Header(int customerIdIndex, int boardIndex, boolean present) {
+    public record Header(int customerIdIndex, int boardIndex, int addressIndex, boolean present) {
         public static Header none() {
-            return new Header(-1, -1, false);
+            return new Header(-1, -1, -1, false);
         }
     }
 
-    public record ParsedRow(String customerId, String board, boolean headerRow, boolean hasCustomerId,
-                            boolean invalidBoard) {
+    public record ParsedRow(String customerId, String board, String address, boolean headerRow, boolean hasCustomerId,
+                            boolean invalidBoard, boolean invalidAddress) {
         public static ParsedRow empty() {
-            return new ParsedRow("", null, false, false, false);
+            return new ParsedRow("", null, null, false, false, false, false);
         }
 
         public static ParsedRow forHeader() {
-            return new ParsedRow("", null, true, false, false);
+            return new ParsedRow("", null, null, true, false, false, false);
         }
     }
 }

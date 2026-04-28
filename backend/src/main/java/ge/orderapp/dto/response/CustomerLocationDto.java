@@ -1,9 +1,7 @@
 package ge.orderapp.dto.response;
 
-public record DraftItemDto(
-        String customerName,
+public record CustomerLocationDto(
         String customerId,
-        String comment,
         String board,
         String address
 ) {}

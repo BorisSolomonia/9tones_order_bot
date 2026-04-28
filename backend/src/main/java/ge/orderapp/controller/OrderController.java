@@ -78,7 +78,7 @@ public class OrderController {
         if (!Set.of("ACCOUNTANT", "ADMIN").contains(user.role())) {
             throw new ForbiddenException("ACCOUNTANT or ADMIN role required");
         }
-        return ResponseEntity.ok(orderService.updateOrderItemBoard(orderId, itemId, req.board()));
+        return ResponseEntity.ok(orderService.updateOrderItemLocation(orderId, itemId, req.board(), req.address()));
     }
 
     @GetMapping("/export")

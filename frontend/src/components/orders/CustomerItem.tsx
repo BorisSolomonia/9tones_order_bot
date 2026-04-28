@@ -1,7 +1,7 @@
 'use client';
 
 import { Checkbox } from '@/components/ui/checkbox';
-import { Star } from 'lucide-react';
+import { MapPin, Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GEO } from '@/lib/geo';
 import type { Customer } from '@/types';
@@ -13,10 +13,11 @@ interface CustomerItemProps {
   comment: string;
   onToggle: () => void;
   onToggleMy: () => void;
+  onManageLocations: () => void;
   onCommentChange: (comment: string) => void;
 }
 
-export function CustomerItem({ customer, isSelected, isMy, comment, onToggle, onToggleMy, onCommentChange }: CustomerItemProps) {
+export function CustomerItem({ customer, isSelected, isMy, comment, onToggle, onToggleMy, onManageLocations, onCommentChange }: CustomerItemProps) {
   return (
     <div
       className={cn(
@@ -33,6 +34,9 @@ export function CustomerItem({ customer, isSelected, isMy, comment, onToggle, on
         {customer.board && (
           <span className="text-[9px] text-primary/70 truncate">{customer.board}</span>
         )}
+        {customer.address && (
+          <span className="text-[9px] text-emerald-700 truncate">{customer.address}</span>
+        )}
       </button>
       <input
         type="text"
@@ -42,6 +46,16 @@ export function CustomerItem({ customer, isSelected, isMy, comment, onToggle, on
         onClick={(e) => e.stopPropagation()}
         className="flex-1 min-w-0 h-7 px-1.5 text-[10px] focus:text-xs rounded border border-input bg-background placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring transition-all"
       />
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onManageLocations();
+        }}
+        className="p-1 shrink-0"
+        title={GEO.locations}
+      >
+        <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+      </button>
       <button
         onClick={(e) => {
           e.stopPropagation();

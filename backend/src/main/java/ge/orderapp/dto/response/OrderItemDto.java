@@ -7,5 +7,6 @@ public record OrderItemDto(
         String customerId,
         String comment,
         String createdAt,
-        String board
+        String board,
+        String address
 ) {}

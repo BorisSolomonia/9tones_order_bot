@@ -3,7 +3,7 @@
 import { Fragment, useState, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, buildApiUrl } from '@/lib/api';
-import { useOrderDetail, useUpdateOrderItemBoard } from '@/hooks/use-orders';
+import { useOrderDetail, useUpdateOrderItemLocation } from '@/hooks/use-orders';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -147,6 +147,7 @@ function OrderItemsDetail({ orderId }: { orderId: string }) {
         <tr className="text-muted-foreground">
           <th className="text-left py-1 font-normal">{GEO.customerName}</th>
           <th className="text-left py-1 font-normal">{GEO.board}</th>
+          <th className="text-left py-1 font-normal">{GEO.address}</th>
           <th className="text-left py-1 font-normal">{GEO.comment}</th>
         </tr>
       </thead>
@@ -161,26 +162,35 @@ function OrderItemsDetail({ orderId }: { orderId: string }) {
 
 function OrderItemRow({ item, orderId }: { item: OrderItem; orderId: string }) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(item.board ?? '');
+  const [boardValue, setBoardValue] = useState(item.board ?? '');
+  const [addressValue, setAddressValue] = useState(item.address ?? '');
   const inputRef = useRef<HTMLInputElement>(null);
-  const updateBoard = useUpdateOrderItemBoard();
+  const updateLocation = useUpdateOrderItemLocation();
 
   const handleEdit = () => {
-    setValue(item.board ?? '');
+    setBoardValue(item.board ?? '');
+    setAddressValue(item.address ?? '');
     setEditing(true);
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
   const handleSave = () => {
-    const trimmed = value.trim();
-    if (trimmed !== (item.board ?? '')) {
-      updateBoard.mutate({ orderId, itemId: item.itemId, board: trimmed || null });
+    const trimmedBoard = boardValue.trim();
+    const trimmedAddress = addressValue.trim();
+    if (trimmedBoard !== (item.board ?? '') || trimmedAddress !== (item.address ?? '')) {
+      updateLocation.mutate({
+        orderId,
+        itemId: item.itemId,
+        board: trimmedBoard || null,
+        address: trimmedAddress || null,
+      });
     }
     setEditing(false);
   };
 
   const handleCancel = () => {
-    setValue(item.board ?? '');
+    setBoardValue(item.board ?? '');
+    setAddressValue(item.address ?? '');
     setEditing(false);
   };
 
@@ -197,9 +207,8 @@ function OrderItemRow({ item, orderId }: { item: OrderItem; orderId: string }) {
           <div className="flex items-center gap-1">
             <input
               ref={inputRef}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onBlur={handleSave}
+              value={boardValue}
+              onChange={(e) => setBoardValue(e.target.value)}
               onKeyDown={handleKeyDown}
               className="h-6 px-1.5 text-xs rounded border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring w-28"
             />
@@ -221,6 +230,24 @@ function OrderItemRow({ item, orderId }: { item: OrderItem; orderId: string }) {
               <span className="text-muted-foreground/50 italic">{GEO.noBoard}</span>
             )}
             <Pencil className="h-2.5 w-2.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </button>
+        )}
+      </td>
+      <td className="py-1.5 pr-4">
+        {editing ? (
+          <input
+            value={addressValue}
+            onChange={(e) => setAddressValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="h-6 px-1.5 text-xs rounded border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring w-32"
+          />
+        ) : item.address ? (
+          <button onClick={handleEdit} className="text-emerald-700 bg-emerald-50 px-1 rounded">
+            {item.address}
+          </button>
+        ) : (
+          <button onClick={handleEdit} className="text-muted-foreground/50 italic">
+            {GEO.noAddress}
           </button>
         )}
       </td>

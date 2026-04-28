@@ -2,7 +2,9 @@ package ge.orderapp.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import ge.orderapp.cache.InMemoryStore;
+import ge.orderapp.dto.request.AddCustomerLocationRequest;
 import ge.orderapp.dto.request.CreateCustomerRequest;
+import ge.orderapp.exception.BadRequestException;
 import ge.orderapp.exception.NotFoundException;
 import ge.orderapp.repository.SheetsClient;
 import org.junit.jupiter.api.Test;
@@ -43,6 +45,35 @@ class CustomerServiceBoardPersistenceTest {
         assertThrows(NotFoundException.class, () -> service.removeBoard(customerId, "ვარკეთილი"));
         assertEquals(customerId, sheetsClient.lastCustomerId);
         assertEquals("ვარკეთილი", sheetsClient.lastBoard);
+    }
+
+    @Test
+    void managerCanAddAddressUnderExistingBoardOnly() {
+        InMemoryStore store = new InMemoryStore(new ObjectMapper());
+        CustomerService service = new CustomerService(store);
+
+        String customerId = service.create(new CreateCustomerRequest("Customer", "123456789"), "admin").customerId();
+        service.addBoard(customerId, "Saburtalo", "admin");
+
+        service.addLocation(customerId, new AddCustomerLocationRequest("Saburtalo", "y1"), "manager", "MANAGER");
+
+        assertEquals(1, service.getLocations(customerId).stream()
+                .filter(location -> "y1".equals(location.address()))
+                .count());
+        assertThrows(BadRequestException.class,
+                () -> service.addLocation(customerId, new AddCustomerLocationRequest("Vake", "y2"), "manager", "MANAGER"));
+    }
+
+    @Test
+    void managerCannotRemoveBoardOnlyLocation() {
+        InMemoryStore store = new InMemoryStore(new ObjectMapper());
+        CustomerService service = new CustomerService(store);
+
+        String customerId = service.create(new CreateCustomerRequest("Customer", "123456789"), "admin").customerId();
+        service.addBoard(customerId, "Saburtalo", "admin");
+
+        assertThrows(BadRequestException.class,
+                () -> service.removeLocation(customerId, "Saburtalo", null, "MANAGER"));
     }
 
     private static final class TestSheetsClient extends SheetsClient {

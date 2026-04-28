@@ -77,7 +77,7 @@ public class MockConfig {
             for (String[] cd : customerData) {
                 store.putCustomer(new CustomerDto(
                         cd[0], cd[1], cd[2], Integer.parseInt(cd[3]),
-                        "rsge_sync", true, now, now, null));
+                        "rsge_sync", true, now, now, null, null));
             }
 
             store.addMyCustomer(new MyCustomerDto("u2", "შპს ბახუსი", "c2", now));

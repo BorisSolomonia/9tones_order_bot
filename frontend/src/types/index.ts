@@ -17,6 +17,13 @@ export interface Customer {
   createdAt: string;
   updatedAt: string;
   board?: string;
+  address?: string;
+}
+
+export interface CustomerLocation {
+  customerId: string;
+  board: string;
+  address?: string;
 }
 
 export interface Order {
@@ -40,6 +47,7 @@ export interface OrderItem {
   comment: string;
   createdAt: string;
   board?: string;
+  address?: string;
 }
 
 export interface Draft {
@@ -56,6 +64,7 @@ export interface DraftItem {
   customerId: string;
   comment: string;
   board?: string;
+  address?: string;
 }
 
 export interface MyCustomer {
@@ -83,4 +92,5 @@ export interface SelectedCustomer {
   customerId?: string;
   comment: string;
   board?: string;
+  address?: string;
 }

@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { GEO } from '@/lib/geo';
 import { FRONTEND_CONFIG } from '@/lib/config';
-import { useCustomerBoards, useAddBoard, useRemoveBoard } from '@/hooks/use-customer-boards';
+import { useAddBoard, useAddLocation, useCustomerLocations, useRemoveBoard, useRemoveLocation } from '@/hooks/use-customer-boards';
 import type { Customer } from '@/types';
 import { Plus, Search, Trash2, X } from 'lucide-react';
 
@@ -99,7 +99,7 @@ export default function CustomersPage() {
                 <th className="px-4 py-3 text-left">{GEO.customerName}</th>
                 <th className="px-4 py-3 text-left">{GEO.tin}</th>
                 <th className="px-4 py-3 text-center">Score</th>
-                <th className="px-4 py-3 text-center">{GEO.boards}</th>
+                <th className="px-4 py-3 text-center">{GEO.locations}</th>
                 <th className="px-4 py-3 text-center">{GEO.active}</th>
                 <th className="px-4 py-3 text-center"></th>
               </tr>
@@ -170,7 +170,7 @@ function CustomerRow({
   onDelete: () => void;
   onManageBoards: () => void;
 }) {
-  const { data: boards } = useCustomerBoards(customer.customerId);
+  const { data: locations } = useCustomerLocations(customer.customerId);
 
   return (
     <tr className="border-t">
@@ -183,9 +183,9 @@ function CustomerRow({
           className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
         >
           <Badge variant="secondary" className="text-[10px]">
-            {boards?.length ?? 0}
+            {locations?.length ?? 0}
           </Badge>
-          <span>{GEO.boards}</span>
+          <span>{GEO.locations}</span>
         </button>
       </td>
       <td className="px-4 py-3 text-center">
@@ -212,9 +212,14 @@ function CustomerRow({
 
 function BoardsDialog({ customer, onClose }: { customer: Customer; onClose: () => void }) {
   const [newBoard, setNewBoard] = useState('');
-  const { data: boards, isLoading } = useCustomerBoards(customer.customerId);
+  const [addressBoard, setAddressBoard] = useState(customer.board ?? '');
+  const [newAddress, setNewAddress] = useState('');
+  const { data: locations, isLoading } = useCustomerLocations(customer.customerId);
   const addBoard = useAddBoard(customer.customerId);
+  const addLocation = useAddLocation(customer.customerId);
   const removeBoard = useRemoveBoard(customer.customerId);
+  const removeLocation = useRemoveLocation(customer.customerId);
+  const boards = Array.from(new Set((locations ?? []).map((location) => location.board)));
 
   const handleAdd = async () => {
     const trimmed = newBoard.trim();
@@ -227,9 +232,25 @@ function BoardsDialog({ customer, onClose }: { customer: Customer; onClose: () =
     }
   };
 
-  const handleRemove = async (board: string) => {
+  const handleAddAddress = async () => {
+    const trimmedBoard = addressBoard.trim();
+    const trimmedAddress = newAddress.trim();
+    if (!trimmedBoard || !trimmedAddress) return;
     try {
-      await removeBoard.mutateAsync(board);
+      await addLocation.mutateAsync({ board: trimmedBoard, address: trimmedAddress });
+      setNewAddress('');
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleRemoveLocation = async (board: string, address?: string) => {
+    try {
+      if (address) {
+        await removeLocation.mutateAsync({ board, address });
+      } else {
+        await removeBoard.mutateAsync(board);
+      }
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -239,24 +260,32 @@ function BoardsDialog({ customer, onClose }: { customer: Customer; onClose: () =
     <Dialog open onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{GEO.boards} — {customer.name}</DialogTitle>
+          <DialogTitle>{GEO.locations} — {customer.name}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
           {isLoading ? (
             <Skeleton className="h-8 w-full" />
-          ) : boards && boards.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {boards.map((board) => (
-                <Badge key={board} variant="secondary" className="text-xs flex items-center gap-1 pr-1">
-                  {board}
+          ) : locations && locations.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              {locations.map((location) => (
+                <div key={`${location.board}|${location.address ?? ''}`} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
+                  <span className="min-w-0 truncate">
+                    <span className="text-primary">{location.board}</span>
+                    {location.address && (
+                      <>
+                        <span className="mx-1 text-muted-foreground">/</span>
+                        <span>{location.address}</span>
+                      </>
+                    )}
+                  </span>
                   <button
-                    onClick={() => handleRemove(board)}
-                    className="ml-1 hover:text-destructive transition-colors"
+                    onClick={() => handleRemoveLocation(location.board, location.address)}
+                    className="p-1 hover:text-destructive transition-colors"
                   >
-                    <X className="h-3 w-3" />
+                    <X className="h-4 w-4" />
                   </button>
-                </Badge>
+                </div>
               ))}
             </div>
           ) : (
@@ -271,6 +300,27 @@ function BoardsDialog({ customer, onClose }: { customer: Customer; onClose: () =
               onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
             />
             <Button onClick={handleAdd} disabled={!newBoard.trim() || addBoard.isPending}>
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+            <select
+              value={addressBoard}
+              onChange={(e) => setAddressBoard(e.target.value)}
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">{GEO.board}</option>
+              {boards.map((board) => (
+                <option key={board} value={board}>{board}</option>
+              ))}
+            </select>
+            <Input
+              placeholder={GEO.addAddress}
+              value={newAddress}
+              onChange={(e) => setNewAddress(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddAddress()}
+            />
+            <Button onClick={handleAddAddress} disabled={!addressBoard.trim() || !newAddress.trim() || addLocation.isPending}>
               <Plus className="h-4 w-4" />
             </Button>
           </div>

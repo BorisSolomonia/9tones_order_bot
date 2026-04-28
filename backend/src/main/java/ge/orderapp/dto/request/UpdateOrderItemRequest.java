@@ -1,3 +1,3 @@
 package ge.orderapp.dto.request;
 
-public record UpdateOrderItemRequest(String board) {}
+public record UpdateOrderItemRequest(String board, String address) {}

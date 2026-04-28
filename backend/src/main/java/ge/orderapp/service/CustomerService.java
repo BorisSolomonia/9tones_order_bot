@@ -1,9 +1,11 @@
 package ge.orderapp.service;
 
 import ge.orderapp.cache.InMemoryStore;
+import ge.orderapp.dto.request.AddCustomerLocationRequest;
 import ge.orderapp.dto.request.CreateCustomerRequest;
 import ge.orderapp.dto.request.UpdateCustomerRequest;
 import ge.orderapp.dto.response.CustomerDto;
+import ge.orderapp.dto.response.CustomerLocationDto;
 import ge.orderapp.dto.response.MyCustomerDto;
 import ge.orderapp.exception.BadRequestException;
 import ge.orderapp.exception.NotFoundException;
@@ -15,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -60,7 +63,7 @@ public class CustomerService {
 
         CustomerDto customer = new CustomerDto(
                 id, sanitize(request.name()), normalizedTin.isEmpty() ? null : normalizedTin,
-                0, addedBy, true, now, now, null);
+                0, addedBy, true, now, now, null, null);
 
         store.putCustomer(customer);
 
@@ -89,7 +92,8 @@ public class CustomerService {
                 request.active() != null ? request.active() : existing.active(),
                 existing.createdAt(),
                 now,
-                existing.board());
+                existing.board(),
+                existing.address());
 
         store.putCustomer(updated);
 
@@ -118,6 +122,11 @@ public class CustomerService {
         return store.getBoards(customerId);
     }
 
+    public List<CustomerLocationDto> getLocations(String customerId) {
+        getById(customerId);
+        return store.getLocations(customerId);
+    }
+
     public void addBoard(String customerId, String board, String addedBy) {
         String sanitized = sanitizeBoard(board);
         if (sanitized == null || sanitized.isBlank()) {
@@ -133,10 +142,47 @@ public class CustomerService {
 
         if (sheetsClient != null) {
             String now = Instant.now().toString();
-            sheetsClient.appendRow("Customer_Boards", List.of(customerId, sanitized, now, addedBy));
+            sheetsClient.appendRow("Customer_Boards", List.of(customerId, sanitized, "", now, addedBy));
         }
 
         log.info("Board added: {} for customer {}", sanitized, customerId);
+    }
+
+    public void addLocation(String customerId, AddCustomerLocationRequest request, String addedBy, String role) {
+        String board = sanitizeBoard(request.board());
+        String address = sanitizeLocationValue(request.address());
+        if (board == null || board.isBlank()) {
+            throw new BadRequestException("Board name cannot be blank");
+        }
+        CustomerDto customer = store.getCustomer(customerId);
+        if (customer == null || !customer.active()) {
+            throw new NotFoundException("Customer not found: " + customerId);
+        }
+
+        boolean boardExists = store.getBoards(customerId).contains(board);
+        if ("MANAGER".equals(role)) {
+            if (!boardExists) {
+                throw new BadRequestException("Managers can add addresses only under existing boards");
+            }
+            if (address == null || address.isBlank()) {
+                throw new BadRequestException("Address cannot be blank");
+            }
+        }
+
+        if (address == null && boardExists) return;
+        if (store.getLocations(customerId).stream()
+                .anyMatch(location -> board.equals(location.board()) && Objects.equals(address, location.address()))) {
+            return;
+        }
+
+        store.addLocation(customerId, board, address);
+
+        if (sheetsClient != null) {
+            String now = Instant.now().toString();
+            sheetsClient.appendRow("Customer_Boards", List.of(customerId, board, address != null ? address : "", now, addedBy));
+        }
+
+        log.info("Customer location added: board={}, address={} for customer {}", board, address, customerId);
     }
 
     public void removeBoard(String customerId, String board) {
@@ -152,6 +198,26 @@ public class CustomerService {
         }
         log.info("Board removed: {} for customer {} (memoryRemoved={}, sheetsRemoved={})",
                 sanitized, customerId, removedFromMemory, removedFromSheets);
+    }
+
+    public void removeLocation(String customerId, String board, String address, String role) {
+        String sanitizedBoard = sanitizeBoard(board);
+        String sanitizedAddress = sanitizeLocationValue(address);
+        if ("MANAGER".equals(role) && (sanitizedAddress == null || sanitizedAddress.isBlank())) {
+            throw new BadRequestException("Managers can remove address rows only");
+        }
+
+        int removedFromSheets = 0;
+        if (sheetsClient != null) {
+            removedFromSheets = sheetsClient.removeCustomerLocationRows(customerId, sanitizedBoard, sanitizedAddress);
+        }
+
+        int removedFromMemory = store.removeLocation(customerId, sanitizedBoard, sanitizedAddress);
+        if (removedFromSheets == 0 && removedFromMemory == 0) {
+            throw new NotFoundException("Location not found");
+        }
+        log.info("Customer location removed: board={}, address={} for customer {} (memoryRemoved={}, sheetsRemoved={})",
+                sanitizedBoard, sanitizedAddress, customerId, removedFromMemory, removedFromSheets);
     }
 
     // --- My Customers ---
@@ -203,6 +269,15 @@ public class CustomerService {
         if (sanitized == null || sanitized.isBlank()) return sanitized;
         if (sanitized.startsWith("#")) {
             throw new BadRequestException("Invalid board value");
+        }
+        return sanitized;
+    }
+
+    private String sanitizeLocationValue(String input) {
+        String sanitized = sanitize(input);
+        if (sanitized == null || sanitized.isBlank()) return null;
+        if (sanitized.startsWith("#")) {
+            throw new BadRequestException("Invalid address value");
         }
         return sanitized;
     }

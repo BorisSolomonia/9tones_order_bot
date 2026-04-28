@@ -1,10 +1,12 @@
 package ge.orderapp.controller;
 
 import ge.orderapp.dto.request.AddBoardRequest;
+import ge.orderapp.dto.request.AddCustomerLocationRequest;
 import ge.orderapp.dto.request.AddMyCustomerRequest;
 import ge.orderapp.dto.request.CreateCustomerRequest;
 import ge.orderapp.dto.request.UpdateCustomerRequest;
 import ge.orderapp.dto.response.CustomerDto;
+import ge.orderapp.dto.response.CustomerLocationDto;
 import ge.orderapp.dto.response.MyCustomerDto;
 import ge.orderapp.dto.response.UserDto;
 import ge.orderapp.exception.ForbiddenException;
@@ -115,10 +117,45 @@ public class CustomerController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/{id}/locations")
+    public ResponseEntity<List<CustomerLocationDto>> getLocations(@PathVariable String id, HttpServletRequest request) {
+        requireAnyRole(request, "ADMIN", "MANAGER");
+        return ResponseEntity.ok(customerService.getLocations(id));
+    }
+
+    @PostMapping("/{id}/locations")
+    public ResponseEntity<Void> addLocation(@PathVariable String id,
+                                             @Valid @RequestBody AddCustomerLocationRequest req,
+                                             HttpServletRequest request) {
+        requireAnyRole(request, "ADMIN", "MANAGER");
+        UserDto user = SessionAuthFilter.getCurrentUser(request);
+        customerService.addLocation(id, req, user.username(), user.role());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{id}/locations")
+    public ResponseEntity<Void> removeLocation(@PathVariable String id,
+                                                @RequestParam String board,
+                                                @RequestParam(required = false) String address,
+                                                HttpServletRequest request) {
+        requireAnyRole(request, "ADMIN", "MANAGER");
+        UserDto user = SessionAuthFilter.getCurrentUser(request);
+        customerService.removeLocation(id, board, address, user.role());
+        return ResponseEntity.noContent().build();
+    }
+
     private void requireRole(HttpServletRequest request, String role) {
         UserDto user = SessionAuthFilter.getCurrentUser(request);
         if (!role.equals(user.role())) {
             throw new ForbiddenException("Role " + role + " required");
         }
+    }
+
+    private void requireAnyRole(HttpServletRequest request, String... roles) {
+        UserDto user = SessionAuthFilter.getCurrentUser(request);
+        for (String role : roles) {
+            if (role.equals(user.role())) return;
+        }
+        throw new ForbiddenException("Role not allowed: " + user.role());
     }
 }

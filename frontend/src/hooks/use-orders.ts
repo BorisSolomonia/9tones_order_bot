@@ -35,6 +35,7 @@ export function useCreateOrder() {
           customerId: i.customerId,
           comment: i.comment,
           board: i.board ?? null,
+          address: i.address ?? null,
         })),
         sendTelegram: data.sendTelegram,
       }),
@@ -44,11 +45,11 @@ export function useCreateOrder() {
   });
 }
 
-export function useUpdateOrderItemBoard() {
+export function useUpdateOrderItemLocation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ orderId, itemId, board }: { orderId: string; itemId: string; board: string | null }) =>
-      api.patch<OrderItem>(`/api/v1/orders/${orderId}/items/${itemId}`, { board }),
+    mutationFn: ({ orderId, itemId, board, address }: { orderId: string; itemId: string; board: string | null; address: string | null }) =>
+      api.patch<OrderItem>(`/api/v1/orders/${orderId}/items/${itemId}`, { board, address }),
     onSuccess: (_, { orderId }) => {
       queryClient.invalidateQueries({ queryKey: ['order', orderId] });
     },

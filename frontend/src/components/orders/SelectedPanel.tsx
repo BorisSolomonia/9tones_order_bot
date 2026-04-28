@@ -25,6 +25,11 @@ export function SelectedPanel({ items, onRemove, onCommentChange }: SelectedPane
           <div key={index} className="flex items-center gap-2 px-4 py-2 border-b last:border-b-0">
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">{item.customerName}</p>
+              {(item.board || item.address) && (
+                <p className="text-[10px] text-muted-foreground truncate">
+                  {item.board}{item.board && item.address ? ' / ' : ''}{item.address}
+                </p>
+              )}
               <Input
                 placeholder={GEO.comment}
                 value={item.comment}

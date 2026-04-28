@@ -17,8 +17,8 @@ import { formatDateTime } from '@/lib/utils';
 import { Trash2, Upload, Plus, ArrowLeft, X, Search, Users } from 'lucide-react';
 import type { Draft, DraftItem, Customer, SelectedCustomer } from '@/types';
 
-function compositeKey(customerId: string, board: string | undefined) {
-  return `${customerId}|${board ?? ''}`;
+function compositeKey(customerId: string, board: string | undefined, address: string | undefined) {
+  return `${customerId}|${board ?? ''}|${address ?? ''}`;
 }
 
 export default function DraftsPage() {
@@ -84,20 +84,20 @@ export default function DraftsPage() {
     }
   };
 
-  const removeItemFromDraft = useCallback((customerId: string, board: string | undefined) => {
+  const removeItemFromDraft = useCallback((customerId: string, board: string | undefined, address: string | undefined) => {
     setDraftItems((prev) =>
       prev.filter(
-        (i) => !(i.customerId === customerId && (i.board ?? '') === (board ?? ''))
+        (i) => !(i.customerId === customerId && (i.board ?? '') === (board ?? '') && (i.address ?? '') === (address ?? ''))
       )
     );
   }, []);
 
   const addCustomerToDraft = useCallback((customer: Customer) => {
     setDraftItems((prev) => {
-      if (prev.some((i) => i.customerId === customer.customerId && (i.board ?? '') === (customer.board ?? ''))) {
+      if (prev.some((i) => i.customerId === customer.customerId && (i.board ?? '') === (customer.board ?? '') && (i.address ?? '') === (customer.address ?? ''))) {
         return prev;
       }
-      return [...prev, { customerName: customer.name, customerId: customer.customerId, comment: '', board: customer.board }];
+      return [...prev, { customerName: customer.name, customerId: customer.customerId, comment: '', board: customer.board, address: customer.address }];
     });
   }, []);
 
@@ -112,6 +112,7 @@ export default function DraftsPage() {
           customerId: i.customerId,
           comment: i.comment || '',
           board: i.board ?? undefined,
+          address: i.address ?? undefined,
         })),
       });
       setActiveDraft(updated);
@@ -185,7 +186,7 @@ export default function DraftsPage() {
                   <div className="flex flex-wrap gap-1 mt-2">
                     {draft.items.slice(0, 4).map((item, i) => (
                       <Badge key={i} variant="outline" className="text-[10px]">
-                        {item.customerName}{item.board ? ` / ${item.board}` : ''}
+                        {item.customerName}{item.board ? ` / ${item.board}` : ''}{item.address ? ` / ${item.address}` : ''}
                       </Badge>
                     ))}
                     {draft.items.length > 4 && (
@@ -252,7 +253,7 @@ interface DraftDetailProps {
   items: DraftItem[];
   showAddCustomers: boolean;
   onToggleAddCustomers: () => void;
-  onRemoveItem: (customerId: string, board: string | undefined) => void;
+  onRemoveItem: (customerId: string, board: string | undefined, address: string | undefined) => void;
   onAddCustomer: (customer: Customer) => void;
   onSave: () => void;
   onLoad: () => void;
@@ -274,7 +275,7 @@ function DraftDetail({
   onBack,
   isSaving,
 }: DraftDetailProps) {
-  const itemKeys = new Set(items.map((i) => compositeKey(i.customerId, i.board)));
+  const itemKeys = new Set(items.map((i) => compositeKey(i.customerId, i.board, i.address)));
 
   return (
     <div className="fixed inset-0 z-50 bg-background flex flex-col">
@@ -311,7 +312,7 @@ function DraftDetail({
             ) : (
               items.map((item) => (
                 <div
-                  key={compositeKey(item.customerId, item.board)}
+                  key={compositeKey(item.customerId, item.board, item.address)}
                   className="flex items-center gap-3 px-4 py-3 border-b"
                 >
                   <div className="flex-1 min-w-0">
@@ -319,9 +320,12 @@ function DraftDetail({
                     {item.board && (
                       <span className="ml-2 text-xs text-primary/70">{item.board}</span>
                     )}
+                    {item.address && (
+                      <span className="ml-2 text-xs text-emerald-700">{item.address}</span>
+                    )}
                   </div>
                   <button
-                    onClick={() => onRemoveItem(item.customerId, item.board)}
+                    onClick={() => onRemoveItem(item.customerId, item.board, item.address)}
                     className="shrink-0 p-2 min-h-[44px] flex items-center"
                   >
                     <X className="h-4 w-4 text-destructive" />
@@ -418,7 +422,7 @@ function CustomerSearchPanel({ existingKeys, onAddCustomer, onClose }: CustomerS
           >
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const customer = customers[virtualRow.index];
-              const key = compositeKey(customer.customerId, customer.board);
+              const key = compositeKey(customer.customerId, customer.board, customer.address);
               const alreadyAdded = existingKeys.has(key);
               return (
                 <div
@@ -453,6 +457,9 @@ function CustomerSearchPanel({ existingKeys, onAddCustomer, onClose }: CustomerS
                       <span className="text-[11px] truncate">{customer.name}</span>
                       {customer.board && (
                         <span className="text-[9px] text-primary/70 truncate">{customer.board}</span>
+                      )}
+                      {customer.address && (
+                        <span className="text-[9px] text-emerald-700 truncate">{customer.address}</span>
                       )}
                     </div>
                   </div>

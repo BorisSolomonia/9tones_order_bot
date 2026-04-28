@@ -176,7 +176,7 @@ public class SyncService {
                 String now = Instant.now().toString();
                 CustomerDto newCustomer = new CustomerDto(
                         customerId, ec.name(), ec.tin(), 0,
-                        syncSourceUser, true, now, now, null);
+                        syncSourceUser, true, now, now, null, null);
                 store.putCustomer(newCustomer);
 
                 if (sheetsClient != null) {

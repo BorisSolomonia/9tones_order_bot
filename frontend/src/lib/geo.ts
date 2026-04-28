@@ -82,6 +82,10 @@ export const GEO = {
   addBoard: 'ბორტის დამატება',
   noBoard: 'ბორტი არ არის',
   boards: 'ბორტები',
+  address: 'მისამართი',
+  addAddress: 'მისამართის დამატება',
+  noAddress: 'მისამართი არ არის',
+  locations: 'ლოკაციები',
 
   // General
   loading: 'იტვირთება...',

@@ -212,7 +212,7 @@ public class SheetsClient {
 
     public int removeCustomerBoardRows(String customerId, String board) {
         try {
-            List<Integer> rowIndexes = findCustomerBoardRowIndexes(customerId, board);
+            List<Integer> rowIndexes = findCustomerBoardRowIndexes(customerId, board, null, false);
             if (rowIndexes.isEmpty()) {
                 return 0;
             }
@@ -221,6 +221,21 @@ public class SheetsClient {
         } catch (Exception e) {
             log.error("Failed to remove Customer_Boards rows for customerId={}, board={}: {}", customerId, board, e.getMessage());
             throw new RuntimeException("Failed to remove customer board rows from Google Sheets", e);
+        }
+    }
+
+    public int removeCustomerLocationRows(String customerId, String board, String address) {
+        try {
+            List<Integer> rowIndexes = findCustomerBoardRowIndexes(customerId, board, address, true);
+            if (rowIndexes.isEmpty()) {
+                return 0;
+            }
+            deleteRows("Customer_Boards", rowIndexes);
+            return rowIndexes.size();
+        } catch (Exception e) {
+            log.error("Failed to remove Customer_Boards location rows for customerId={}, board={}, address={}: {}",
+                    customerId, board, address, e.getMessage());
+            throw new RuntimeException("Failed to remove customer location rows from Google Sheets", e);
         }
     }
 
@@ -299,15 +314,20 @@ public class SheetsClient {
                 continue;
             }
             if (parsed.board() == null) {
-                if (parsed.invalidBoard()) {
+                if (parsed.invalidBoard() || parsed.invalidAddress()) {
                     rowsToDelete.add(i + 1);
                     invalidRows++;
                 }
                 continue;
             }
+            if (parsed.invalidAddress()) {
+                rowsToDelete.add(i + 1);
+                invalidRows++;
+                continue;
+            }
 
-            String key = parsed.customerId() + "\u0000" + parsed.board();
-            String timestamp = cell(row, 2);
+            String key = parsed.customerId() + "\u0000" + parsed.board() + "\u0000" + (parsed.address() != null ? parsed.address() : "");
+            String timestamp = customerBoardTimestamp(row);
             Integer existingRow = newestRowByKey.get(key);
             if (existingRow == null) {
                 newestRowByKey.put(key, i + 1);
@@ -337,7 +357,7 @@ public class SheetsClient {
         return rowsToDelete.size();
     }
 
-    private List<Integer> findCustomerBoardRowIndexes(String customerId, String board) throws Exception {
+    private List<Integer> findCustomerBoardRowIndexes(String customerId, String board, String address, boolean matchAddress) throws Exception {
         List<List<Object>> rows = sheetsService.spreadsheets().values()
                 .get(spreadsheetId, "Customer_Boards!A:Z")
                 .setValueRenderOption("UNFORMATTED_VALUE")
@@ -349,10 +369,13 @@ public class SheetsClient {
 
         List<Integer> matches = new ArrayList<>();
         String normalizedBoard = CustomerBoardRows.normalizeBoard(board);
+        String normalizedAddress = CustomerBoardRows.normalizeAddress(address);
         CustomerBoardRows.Header header = CustomerBoardRows.detectHeader(rows);
         for (int i = 0; i < rows.size(); i++) {
             CustomerBoardRows.ParsedRow parsed = CustomerBoardRows.parse(rows.get(i), header);
-            if (customerId.equals(parsed.customerId()) && Objects.equals(normalizedBoard, parsed.board())) {
+            if (customerId.equals(parsed.customerId())
+                    && Objects.equals(normalizedBoard, parsed.board())
+                    && (!matchAddress || Objects.equals(normalizedAddress, parsed.address()))) {
                 matches.add(i + 1);
             }
         }
@@ -393,6 +416,20 @@ public class SheetsClient {
             return "";
         }
         return row.get(index).toString().trim();
+    }
+
+    private String customerBoardTimestamp(List<Object> row) {
+        for (int index : List.of(3, 2, 4)) {
+            String value = cell(row, index);
+            if (looksLikeTimestamp(value)) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private boolean looksLikeTimestamp(String value) {
+        return value != null && value.matches("^\\d{4}-\\d{2}-\\d{2}([T ].*)?$");
     }
 
     private int compareIsoTimestamps(String a, String b) {
