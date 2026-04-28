@@ -3,11 +3,13 @@ package ge.orderapp.controller;
 import ge.orderapp.dto.request.LoginRequest;
 import ge.orderapp.dto.response.UserDto;
 import ge.orderapp.security.AuthenticationService;
+import ge.orderapp.security.ProxyRequestUtils;
 import ge.orderapp.security.SessionAuthFilter;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,6 +21,9 @@ public class AuthController {
 
     private final AuthenticationService authService;
 
+    @Value("${app.security.session.cookie-secure:auto}")
+    private String sessionCookieSecureMode;
+
     public AuthController(AuthenticationService authService) {
         this.authService = authService;
     }
@@ -27,10 +32,10 @@ public class AuthController {
     public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest request,
                                                       HttpServletRequest httpRequest,
                                                       HttpServletResponse httpResponse) {
-        String ip = httpRequest.getRemoteAddr();
+        String ip = ProxyRequestUtils.clientIp(httpRequest);
         AuthenticationService.LoginResult result = authService.login(request.username(), request.password(), ip);
 
-        Cookie cookie = buildSessionCookie(result.sessionId(), -1, httpRequest.isSecure());
+        Cookie cookie = buildSessionCookie(result.sessionId(), -1, isSessionCookieSecure(httpRequest));
         httpResponse.addCookie(cookie);
 
         return ResponseEntity.ok(Map.of(
@@ -44,7 +49,7 @@ public class AuthController {
         String sessionId = extractSessionId(request);
         authService.logout(sessionId);
 
-        Cookie cookie = buildSessionCookie("", 0, request.isSecure());
+        Cookie cookie = buildSessionCookie("", 0, isSessionCookieSecure(request));
         response.addCookie(cookie);
 
         return ResponseEntity.ok(Map.of("message", "Logged out"));
@@ -72,5 +77,11 @@ public class AuthController {
         cookie.setMaxAge(maxAge);
         cookie.setAttribute("SameSite", "Lax");
         return cookie;
+    }
+
+    private boolean isSessionCookieSecure(HttpServletRequest request) {
+        if ("true".equalsIgnoreCase(sessionCookieSecureMode)) return true;
+        if ("false".equalsIgnoreCase(sessionCookieSecureMode)) return false;
+        return ProxyRequestUtils.isHttps(request);
     }
 }

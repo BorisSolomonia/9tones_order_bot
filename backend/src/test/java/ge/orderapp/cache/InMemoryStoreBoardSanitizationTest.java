@@ -37,4 +37,55 @@ class InMemoryStoreBoardSanitizationTest {
 
         assertNull(item.board());
     }
+    @Test
+    void loadsCanonicalCustomerBoardRowsWithHeader() {
+        InMemoryStore store = new InMemoryStore(new ObjectMapper());
+        String customerId = "5b5c84f0-d6e3-421b-9c3d-f98c73084203";
+
+        store.loadCustomerBoards(List.of(
+                List.of("customerId", "board", "createdAt", "addedBy"),
+                List.of(customerId, "Central", "2026-04-28T10:15:30Z", "admin")
+        ));
+
+        assertEquals(List.of("Central"), store.getBoards(customerId));
+    }
+
+    @Test
+    void loadsHumanFriendlyCustomerBoardRowsWithNameColumn() {
+        InMemoryStore store = new InMemoryStore(new ObjectMapper());
+        String customerId = "01d195dd-fcb7-4a71-98c0-88ac8fd6a6d0";
+
+        store.loadCustomerBoards(List.of(
+                List.of("customer name", "board", "customer_id", "created at", "added by"),
+                List.of("Acme Ltd", "East", customerId, "2026-04-28T10:15:30Z", "admin")
+        ));
+
+        assertEquals(List.of("East"), store.getBoards(customerId));
+    }
+
+    @Test
+    void infersUuidCustomerIdWhenHumanFriendlyRowHasNoHeader() {
+        InMemoryStore store = new InMemoryStore(new ObjectMapper());
+        String customerId = "d6a0f029-c5a4-45b9-a0d8-54ce1dfaf041";
+
+        store.loadCustomerBoards(List.of(
+                List.of("Acme Ltd", "West", customerId, "2026-04-28T10:15:30Z", "admin")
+        ));
+
+        assertEquals(List.of("West"), store.getBoards(customerId));
+    }
+
+    @Test
+    void exactDuplicateBoardsCollapseButDifferentBoardsRemain() {
+        InMemoryStore store = new InMemoryStore(new ObjectMapper());
+        String customerId = "c1";
+
+        store.loadCustomerBoards(List.of(
+                List.of(customerId, "North"),
+                List.of(customerId, "North"),
+                List.of(customerId, "South")
+        ));
+
+        assertEquals(List.of("North", "South"), store.getBoards(customerId));
+    }
 }

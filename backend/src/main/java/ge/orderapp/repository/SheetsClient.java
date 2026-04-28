@@ -3,6 +3,7 @@ package ge.orderapp.repository;
 import com.google.api.services.sheets.v4.Sheets;
 import com.google.api.services.sheets.v4.model.*;
 import ge.orderapp.cache.InMemoryStore;
+import ge.orderapp.support.CustomerBoardRows;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -84,9 +85,9 @@ public class SheetsClient {
             long elapsed = System.currentTimeMillis() - start;
             log.info("All tabs loaded in {}ms", elapsed);
 
-            int deletedDuplicates = cleanupDuplicateCustomerBoardRows();
-            if (deletedDuplicates > 0) {
-                log.warn("Removed {} duplicate Customer_Boards rows from Google Sheets; reloading board state", deletedDuplicates);
+            int deletedRows = cleanupDuplicateCustomerBoardRows();
+            if (deletedRows > 0) {
+                log.warn("Removed {} Customer_Boards rows from Google Sheets; reloading board state", deletedRows);
                 reloadCustomerBoards();
             }
         } catch (Exception e) {
@@ -276,7 +277,7 @@ public class SheetsClient {
 
     private int cleanupDuplicateCustomerBoardRows() throws Exception {
         List<List<Object>> rows = sheetsService.spreadsheets().values()
-                .get(spreadsheetId, "Customer_Boards!A:D")
+                .get(spreadsheetId, "Customer_Boards!A:Z")
                 .setValueRenderOption("UNFORMATTED_VALUE")
                 .execute()
                 .getValues();
@@ -287,16 +288,25 @@ public class SheetsClient {
         Map<String, Integer> newestRowByKey = new HashMap<>();
         Map<String, String> newestTimestampByKey = new HashMap<>();
         List<Integer> rowsToDelete = new ArrayList<>();
+        int invalidRows = 0;
+        int duplicateRows = 0;
+        CustomerBoardRows.Header header = CustomerBoardRows.detectHeader(rows);
 
         for (int i = 0; i < rows.size(); i++) {
             List<Object> row = rows.get(i);
-            String customerId = cell(row, 0);
-            String board = normalizeBoard(cell(row, 1));
-            if (customerId.isBlank() || board == null) {
+            CustomerBoardRows.ParsedRow parsed = CustomerBoardRows.parse(row, header);
+            if (parsed.headerRow() || parsed.customerId().isBlank()) {
+                continue;
+            }
+            if (parsed.board() == null) {
+                if (parsed.invalidBoard()) {
+                    rowsToDelete.add(i + 1);
+                    invalidRows++;
+                }
                 continue;
             }
 
-            String key = customerId + "\u0000" + board;
+            String key = parsed.customerId() + "\u0000" + parsed.board();
             String timestamp = cell(row, 2);
             Integer existingRow = newestRowByKey.get(key);
             if (existingRow == null) {
@@ -308,10 +318,12 @@ public class SheetsClient {
             String existingTimestamp = newestTimestampByKey.get(key);
             if (compareIsoTimestamps(timestamp, existingTimestamp) >= 0) {
                 rowsToDelete.add(existingRow);
+                duplicateRows++;
                 newestRowByKey.put(key, i + 1);
                 newestTimestampByKey.put(key, timestamp);
             } else {
                 rowsToDelete.add(i + 1);
+                duplicateRows++;
             }
         }
 
@@ -319,13 +331,15 @@ public class SheetsClient {
             return 0;
         }
 
+        log.warn("Customer_Boards cleanup deleting rows: total={}, duplicates={}, invalid={}",
+                rowsToDelete.size(), duplicateRows, invalidRows);
         deleteRows("Customer_Boards", rowsToDelete);
         return rowsToDelete.size();
     }
 
     private List<Integer> findCustomerBoardRowIndexes(String customerId, String board) throws Exception {
         List<List<Object>> rows = sheetsService.spreadsheets().values()
-                .get(spreadsheetId, "Customer_Boards!A:B")
+                .get(spreadsheetId, "Customer_Boards!A:Z")
                 .setValueRenderOption("UNFORMATTED_VALUE")
                 .execute()
                 .getValues();
@@ -334,10 +348,11 @@ public class SheetsClient {
         }
 
         List<Integer> matches = new ArrayList<>();
-        String normalizedBoard = normalizeBoard(board);
+        String normalizedBoard = CustomerBoardRows.normalizeBoard(board);
+        CustomerBoardRows.Header header = CustomerBoardRows.detectHeader(rows);
         for (int i = 0; i < rows.size(); i++) {
-            List<Object> row = rows.get(i);
-            if (customerId.equals(cell(row, 0)) && Objects.equals(normalizedBoard, normalizeBoard(cell(row, 1)))) {
+            CustomerBoardRows.ParsedRow parsed = CustomerBoardRows.parse(rows.get(i), header);
+            if (customerId.equals(parsed.customerId()) && Objects.equals(normalizedBoard, parsed.board())) {
                 matches.add(i + 1);
             }
         }
@@ -378,15 +393,6 @@ public class SheetsClient {
             return "";
         }
         return row.get(index).toString().trim();
-    }
-
-    private String normalizeBoard(String board) {
-        if (board == null) return null;
-        String trimmed = board.trim();
-        if (trimmed.isBlank() || trimmed.startsWith("#")) {
-            return null;
-        }
-        return trimmed;
     }
 
     private int compareIsoTimestamps(String a, String b) {

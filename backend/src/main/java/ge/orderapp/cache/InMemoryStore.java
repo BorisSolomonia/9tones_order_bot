@@ -3,6 +3,7 @@ package ge.orderapp.cache;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import ge.orderapp.dto.response.*;
+import ge.orderapp.support.CustomerBoardRows;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -185,17 +186,16 @@ public class InMemoryStore {
     public void loadCustomerBoards(List<List<Object>> rows) {
         customerBoards.clear();
         int skippedInvalid = 0;
+        CustomerBoardRows.Header header = CustomerBoardRows.detectHeader(rows);
         for (List<Object> row : rows) {
             if (row.isEmpty()) continue;
-            String customerId = str(row, 0);
-            String board = normalizeBoardValue(str(row, 1));
-            if (customerId.isBlank() || board == null) {
-                if (!customerId.isBlank() && !str(row, 1).isBlank()) {
-                    skippedInvalid++;
-                }
+            CustomerBoardRows.ParsedRow parsed = CustomerBoardRows.parse(row, header);
+            if (parsed.headerRow()) continue;
+            if (parsed.customerId().isBlank() || parsed.board() == null) {
+                if (parsed.invalidBoard()) skippedInvalid++;
                 continue;
             }
-            customerBoards.computeIfAbsent(customerId, k -> new CopyOnWriteArrayList<>()).add(board);
+            customerBoards.computeIfAbsent(parsed.customerId(), k -> new CopyOnWriteArrayList<>()).add(parsed.board());
         }
         log.info("Loaded customer boards for {} customers (skippedInvalid={})", customerBoards.size(), skippedInvalid);
     }
@@ -529,15 +529,7 @@ public class InMemoryStore {
     }
 
     private String normalizeBoardValue(String board) {
-        if (board == null) return null;
-        String trimmed = board.trim();
-        if (trimmed.isBlank()) return null;
-        if (isSpreadsheetFormulaError(trimmed)) return null;
-        return trimmed;
-    }
-
-    private boolean isSpreadsheetFormulaError(String value) {
-        return value.startsWith("#");
+        return CustomerBoardRows.normalizeBoard(board);
     }
 
     // --- Helpers ---

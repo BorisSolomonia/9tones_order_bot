@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { Fragment, useState, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, buildApiUrl } from '@/lib/api';
 import { useOrderDetail, useUpdateOrderItemBoard } from '@/hooks/use-orders';
@@ -99,9 +99,8 @@ export default function ReportsPage() {
             </thead>
             <tbody>
               {orders?.map((order) => (
-                <>
+                <Fragment key={order.orderId}>
                   <tr
-                    key={order.orderId}
                     className="border-t cursor-pointer hover:bg-muted/30"
                     onClick={() => setExpandedOrderId(expandedOrderId === order.orderId ? null : order.orderId)}
                   >
@@ -126,7 +125,7 @@ export default function ReportsPage() {
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               ))}
             </tbody>
           </table>

@@ -73,6 +73,10 @@ app:
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000}
   security:
+    session:
+      # In-memory sessions are process-local: restarting logs users out, and horizontal scaling
+      # requires external session storage or sticky sessions.
+      cookie-secure: ${APP_SECURITY_SESSION_COOKIE_SECURE:auto}
     login-rate:
       max-attempts: ${APP_SECURITY_LOGIN_RATE_MAX_ATTEMPTS:5}
       window-seconds: ${APP_SECURITY_LOGIN_RATE_WINDOW_SECONDS:300}
